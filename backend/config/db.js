@@ -1,11 +1,17 @@
+const path = require('path');
 const { Pool } = require('pg');
-require('dotenv').config();
 
-const connectionString =
-  process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/stocksense_db';
+// Load .env from the project root
+require('dotenv').config({
+  path: path.resolve(__dirname, '../../.env'),
+});
 
 const pool = new Pool({
-  connectionString,
+  host: process.env.DB_HOST || 'localhost',
+  port: Number(process.env.DB_PORT) || 5432,
+  database: process.env.DB_NAME || 'stocksense_db',
+  user: process.env.DB_USER || 'postgres',
+  password: process.env.DB_PASSWORD,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
@@ -22,7 +28,10 @@ pool.on('error', (err) => {
 async function testConnection() {
   try {
     const result = await pool.query('SELECT NOW() AS current_time');
-    console.log('PostgreSQL connected successfully:', result.rows[0].current_time);
+    console.log(
+      'PostgreSQL connected successfully:',
+      result.rows[0].current_time
+    );
     return true;
   } catch (error) {
     console.error('PostgreSQL connection failed:', error.message);
