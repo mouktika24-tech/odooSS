@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import {
   ArrowLeftRight,
+  ChevronDown,
   ClipboardList,
   LayoutDashboard,
   PackageCheck,
@@ -18,11 +19,15 @@ const navigation = [
   { id: 'history', label: 'Move history', icon: ArrowLeftRight },
 ]
 
+const warehouses = ['Main Store', 'Central Warehouse', 'Warehouse 2']
+
 function App() {
   const [activePage, setActivePage] = useState('dashboard')
   const [operationType, setOperationType] = useState('RECEIPT')
   const [createToken, setCreateToken] = useState(0)
   const [toast, setToast] = useState(null)
+  const [selectedWarehouse, setSelectedWarehouse] = useState('Main Store')
+  const [warehouseMenuOpen, setWarehouseMenuOpen] = useState(false)
   const offlineMode = useOfflineMode()
 
   function notify(message, tone = 'success') {
@@ -84,11 +89,47 @@ function App() {
       <main className="min-w-0 flex-1">
         <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-7">
           <div className="flex items-center gap-2 text-sm"><span className="text-slate-400">Inventory</span><span className="text-slate-300">/</span><span className="font-semibold text-slate-700">{activeLabel}</span></div>
-          {offlineMode ? (
-            <div role="status" className="flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800"><span className="h-2 w-2 rounded-full bg-amber-500" />Offline Preview Mode</div>
-          ) : (
-            <div className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600"><span className="h-2 w-2 rounded-full bg-odoo-teal" />Inventory workspace</div>
-          )}
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            {offlineMode && <div role="status" className="flex shrink-0 items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 sm:px-3"><span className="h-2 w-2 rounded-full bg-amber-500" /><span className="sm:hidden">Offline</span><span className="hidden sm:inline">Offline Preview Mode</span></div>}
+            <div className="relative">
+              <button
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={warehouseMenuOpen}
+                aria-label={`Select warehouse. Current warehouse: ${selectedWarehouse}`}
+                onClick={() => setWarehouseMenuOpen((open) => !open)}
+                onKeyDown={(event) => { if (event.key === 'Escape') setWarehouseMenuOpen(false) }}
+                className="inline-flex max-w-44 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-odoo-purple/20 sm:max-w-none sm:gap-2 sm:px-3 sm:text-sm"
+              >
+                <Warehouse size={16} className="shrink-0 text-odoo-teal" />
+                <span className="hidden sm:inline">Warehouse:</span>
+                <span className="truncate">{selectedWarehouse}</span>
+                <ChevronDown size={14} className={`shrink-0 text-slate-400 transition-transform ${warehouseMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {warehouseMenuOpen && (
+                <div role="menu" aria-label="Select warehouse" className="absolute right-0 z-30 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg">
+                  <p className="px-2.5 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Warehouses</p>
+                  {warehouses.map((warehouse) => (
+                    <button
+                      key={warehouse}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selectedWarehouse === warehouse}
+                      onClick={() => { setSelectedWarehouse(warehouse); setWarehouseMenuOpen(false) }}
+                      className={`flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm ${selectedWarehouse === warehouse ? 'bg-[#f3edf2] font-semibold text-odoo-purple' : 'text-slate-600 hover:bg-slate-50'}`}
+                    >
+                      {warehouse}
+                      {selectedWarehouse === warehouse && <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-odoo-teal" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div aria-label="Admin, Manager profile" className="flex shrink-0 items-center gap-2">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#e8dce5] bg-[#f3edf2] text-xs font-bold text-odoo-purple">AM</span>
+              <span className="hidden leading-tight sm:block"><span className="block text-xs font-semibold text-slate-700">Admin</span><span className="mt-0.5 block text-[11px] text-slate-500">Manager</span></span>
+            </div>
+          </div>
         </header>
 
         <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-7 sm:py-8">

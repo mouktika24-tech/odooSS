@@ -22,18 +22,18 @@ const operationTabs = [
 const statusFilters = ['ALL', 'DRAFT', 'WAITING', 'READY', 'DONE', 'CANCELED']
 
 const statusStyles = {
-  DRAFT: 'bg-slate-100 text-slate-600 ring-slate-200',
-  WAITING: 'bg-sky-50 text-sky-700 ring-sky-200',
-  READY: 'bg-amber-50 text-amber-800 ring-amber-200',
-  DONE: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  CANCELED: 'bg-red-50 text-red-700 ring-red-200',
-  CANCELLED: 'bg-red-50 text-red-700 ring-red-200',
+  DRAFT: 'border-slate-200 bg-slate-50 text-slate-700',
+  WAITING: 'border-sky-200 bg-sky-50 text-sky-800',
+  READY: 'border-amber-200 bg-amber-50 text-amber-800',
+  DONE: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  CANCELED: 'border-red-200 bg-red-50 text-red-800',
+  CANCELLED: 'border-red-200 bg-red-50 text-red-800',
 }
 
 function StatusBadge({ status }) {
   const normalized = String(status || 'DRAFT').toUpperCase()
   const label = normalized.charAt(0) + normalized.slice(1).toLowerCase()
-  return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${statusStyles[normalized] || 'bg-slate-100 text-slate-600 ring-slate-200'}`}>{label}</span>
+  return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${statusStyles[normalized] || statusStyles.DRAFT}`}>{label}</span>
 }
 
 function getReference(operation) {
@@ -265,7 +265,7 @@ function Operations({ initialType, createToken, onToast }) {
         <div><p className="text-sm font-semibold text-odoo-teal">WAREHOUSE</p><h1 className="mt-1 text-2xl font-bold text-odoo-dark sm:text-[28px]">Operations</h1><p className="mt-2 text-sm text-slate-500">Manage receipts, deliveries, transfers, and adjustments.</p></div>
         <div className="flex gap-2">
           <button type="button" onClick={refreshOperations} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50" aria-label="Refresh operations" title="Refresh operations"><RefreshCw size={16} /><span className="hidden sm:inline">Refresh</span></button>
-          <button type="button" onClick={() => { setReference(''); setFormError(''); setValidationError(''); setSourceLocation('Main Warehouse / Stock'); setDestinationLocation('Main Warehouse / Packing'); setIsCreateOpen(true) }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-odoo-purple px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#603e58]"><Plus size={16} /> New {activeTab.singular.toLowerCase()}</button>
+          <button type="button" aria-label={`New ${activeTab.singular.toLowerCase()}`} onClick={() => { setReference(''); setFormError(''); setValidationError(''); setSourceLocation('Main Warehouse / Stock'); setDestinationLocation('Main Warehouse / Packing'); setIsCreateOpen(true) }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-odoo-purple px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#603e58]"><Plus size={16} /> New {activeTab.singular.toLowerCase()}</button>
         </div>
       </div>
 
@@ -282,7 +282,7 @@ function Operations({ initialType, createToken, onToast }) {
         <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
           <label className="relative min-w-0 flex-1">
             <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search reference or SKU" aria-label="Search by reference or SKU" className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15" />
+            <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search SKU, product, or reference" aria-label="Search SKU, product, or reference" className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15" />
           </label>
           <label className="flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-500">Location<select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)} aria-label="Filter by warehouse or location" className="max-w-56 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15"><option value="ALL">All locations</option>{locationOptions.map((location) => <option key={location} value={location}>{location}</option>)}</select></label>
         </div>

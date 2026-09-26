@@ -14,30 +14,39 @@ import api, { getErrorMessage, useOfflineMode } from '../services/api.js'
 const metricCards = [
   {
     key: 'totalStock', label: 'Total stock', icon: Boxes,
-    iconClass: 'bg-[#f3edf2] text-odoo-purple',
+    iconClass: 'border border-[#e8dce5] bg-[#f3edf2] text-odoo-purple',
     keys: ['total_stock', 'totalStock', 'stock_on_hand', 'stockOnHand'], suffix: 'units',
   },
   {
     key: 'lowStock', label: 'Low stock', icon: AlertTriangle,
-    iconClass: 'bg-red-50 text-red-600',
+    iconClass: 'border border-red-200 bg-red-50 text-red-600',
     keys: ['low_stock', 'lowStock', 'low_stock_count', 'lowStockCount'], suffix: 'products',
   },
   {
     key: 'pendingReceipts', label: 'Pending receipts', icon: ArrowDownToLine,
-    iconClass: 'bg-sky-50 text-sky-700',
+    iconClass: 'border border-sky-200 bg-sky-50 text-sky-700',
     keys: ['pending_receipts', 'pendingReceipts'], suffix: 'operations',
   },
   {
     key: 'pendingDeliveries', label: 'Pending deliveries', icon: ArrowUpFromLine,
-    iconClass: 'bg-amber-50 text-amber-700',
+    iconClass: 'border border-amber-200 bg-amber-50 text-amber-700',
     keys: ['pending_deliveries', 'pendingDeliveries'], suffix: 'operations',
   },
   {
     key: 'internalTransfers', label: 'Internal transfers', icon: ArrowLeftRight,
-    iconClass: 'bg-teal-50 text-odoo-teal',
+    iconClass: 'border border-teal-200 bg-teal-50 text-odoo-teal',
     keys: ['internal_transfers', 'internalTransfers'], suffix: 'operations',
   },
 ]
+
+const activityStatusStyles = {
+  DRAFT: 'border-slate-200 bg-slate-50 text-slate-700',
+  WAITING: 'border-sky-200 bg-sky-50 text-sky-800',
+  READY: 'border-amber-200 bg-amber-50 text-amber-800',
+  DONE: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  CANCELED: 'border-red-200 bg-red-50 text-red-800',
+  CANCELLED: 'border-red-200 bg-red-50 text-red-800',
+}
 
 function readMetric(data, keys) {
   for (const key of keys) {
@@ -111,16 +120,16 @@ function Dashboard({ onQuickCreate }) {
         </div>
       )}
 
-      <section aria-label="Inventory key performance indicators" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <section aria-label="Inventory key performance indicators" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {metricCards.map(({ key, label, icon: Icon, iconClass, keys, suffix }) => {
           const value = readMetric(dashboard, keys)
           const isLowStock = key === 'lowStock'
           return (
-            <article key={key} className={`rounded-lg border bg-white p-4 shadow-sm sm:p-5 ${isLowStock ? 'border-red-200' : 'border-slate-200'}`}>
+            <article key={key} className={`rounded-lg border p-4 shadow-sm sm:p-5 ${isLowStock ? 'border-red-200 bg-red-50/30' : 'border-slate-200 bg-white'}`}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium text-slate-500">{label}</p>
-                  <p className={`mt-4 text-3xl font-bold tabular-nums ${isLowStock ? 'text-red-700' : 'text-odoo-dark'}`}>
+                  <p className={`mt-4 text-4xl font-extrabold tabular-nums ${isLowStock ? 'text-red-700' : 'text-odoo-dark'}`}>
                     {loading && !dashboard ? <span className="text-slate-300">...</span> : formatMetric(value)}
                   </p>
                   <p className="mt-1 text-xs text-slate-400">{suffix}</p>
@@ -140,17 +149,21 @@ function Dashboard({ onQuickCreate }) {
           </div>
           {dashboard?.recent_activity?.length ? (
             <ul className="divide-y divide-slate-100">
-              {dashboard.recent_activity.slice(0, 5).map((operation) => (
-                <li key={operation.id} className="flex items-center justify-between gap-4 px-5 py-3.5">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-odoo-dark">{operation.reference_no ?? operation.reference ?? 'Stock operation'}</p>
-                    <p className="mt-1 truncate text-xs text-slate-500">{operation.partner_name ?? operation.type}</p>
-                  </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${operation.status === 'DONE' ? 'bg-emerald-50 text-emerald-700' : operation.status === 'READY' ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
-                    {String(operation.status || 'DRAFT').charAt(0) + String(operation.status || 'DRAFT').slice(1).toLowerCase()}
-                  </span>
-                </li>
-              ))}
+              {dashboard.recent_activity.slice(0, 5).map((operation, index) => {
+                const status = String(operation.status || 'DRAFT').toUpperCase()
+                const key = operation.id ?? operation.reference_no ?? `${operation.type || 'operation'}-${index}`
+                return (
+                  <li key={key} className="flex items-center justify-between gap-4 px-5 py-3.5">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-odoo-dark">{operation.reference_no ?? operation.reference ?? 'Stock operation'}</p>
+                      <p className="mt-1 truncate text-xs text-slate-500">{operation.partner_name ?? operation.type}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${activityStatusStyles[status] || activityStatusStyles.DRAFT}`}>
+                      {status.charAt(0) + status.slice(1).toLowerCase()}
+                    </span>
+                  </li>
+                )
+              })}
             </ul>
           ) : (
             <div className="flex min-h-40 flex-col items-center justify-center px-5 py-8 text-center">
