@@ -37,6 +37,7 @@ async function validateOperation(operationId) {
             SELECT *
             FROM stock_move_lines
             WHERE operation_id = $1
+            ORDER BY product_id, id
             FOR UPDATE;
             `,
             [operationId]
