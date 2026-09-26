@@ -1,5 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import AppLayout from './components/AppLayout.jsx'
+import { WarehouseProvider } from './context/WarehouseContext.jsx'
 import Login from './pages/Login.jsx'
 import Products from './pages/Products.jsx'
 import Register from './pages/Register.jsx'
@@ -20,7 +21,7 @@ function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route element={<AppLayout />}>
+        <Route element={<WarehouseProvider><AppLayout /></WarehouseProvider>}>
           <Route path="/" element={<PlaceholderPage title="Dashboard" />} />
           <Route path="/dashboard" element={<PlaceholderPage title="Dashboard" />} />
           <Route path="/products" element={<Products />} />

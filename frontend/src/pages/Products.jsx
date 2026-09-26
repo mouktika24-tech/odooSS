@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, Eye, LoaderCircle, Package, Pencil, Plus, Search } from 'lucide-react'
 import ProductCreateModal from '../components/ProductCreateModal.jsx'
+import { useWarehouse } from '../context/useWarehouse.js'
 import api from '../services/api.js'
 
 function getList(data, key) {
@@ -38,6 +39,7 @@ function normalizeCategoryValue(category) {
 }
 
 function Products() {
+  const { selectedWarehouse } = useWarehouse()
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
@@ -121,6 +123,15 @@ function Products() {
           <p className="mt-1.5 text-sm text-secondary/65">
             Browse and monitor products in your inventory.
           </p>
+          <p className="mt-2 inline-flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-1 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-secondary/70">
+            <span className="font-medium text-secondary">Warehouse context:</span>
+            <span className="font-semibold text-primary">
+              {selectedWarehouse?.name || 'No warehouse selected'}
+            </span>
+            <span className="basis-full text-secondary/55 sm:basis-auto">
+              Product results are not filtered by warehouse.
+            </span>
+          </p>
         </div>
         <button
           ref={newProductButtonRef}
@@ -133,7 +144,7 @@ function Products() {
         </button>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:items-center">
         <label className="relative min-w-0 flex-1">
           <span className="sr-only">Search products by name or SKU</span>
           <Search
@@ -173,7 +184,7 @@ function Products() {
         </p>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-border bg-surface">
+      <div className="overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
         {error ? (
           <div className="flex min-h-64 flex-col items-center justify-center px-6 py-12 text-center">
             <AlertCircle aria-hidden="true" size={26} className="mb-3 text-red-600" />
@@ -188,13 +199,13 @@ function Products() {
             </button>
           </div>
         ) : loading ? (
-          <div role="status" aria-label="Loading products" className="space-y-4 p-6">
-            <div className="flex items-center gap-2 text-sm text-secondary/65">
+          <div role="status" aria-label="Loading products" className="space-y-3 p-5 sm:p-6">
+            <div className="flex items-center gap-2 pb-1 text-sm font-medium text-secondary/65">
               <LoaderCircle aria-hidden="true" size={17} className="animate-spin" />
               Loading products
             </div>
             {Array.from({ length: 5 }, (_, index) => (
-              <div key={index} className="h-11 animate-pulse rounded-lg bg-background" />
+              <div key={index} className="h-12 animate-pulse rounded-lg bg-background" />
             ))}
           </div>
         ) : filteredProducts.length === 0 ? (
@@ -212,7 +223,7 @@ function Products() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[850px] text-left text-sm">
-              <thead className="bg-background text-xs font-semibold uppercase text-secondary/60">
+              <thead className="bg-secondary/[0.035] text-xs font-semibold text-secondary/70">
                 <tr>
                   <th scope="col" className="px-5 py-3.5">Name</th>
                   <th scope="col" className="px-5 py-3.5">SKU / Code</th>
@@ -228,7 +239,7 @@ function Products() {
                   const status = getStockStatus(product)
 
                   return (
-                    <tr key={product.id ?? product.sku} className="hover:bg-background/70">
+                    <tr key={product.id ?? product.sku} className="transition-colors hover:bg-primary/[0.025]">
                       <th scope="row" className="px-5 py-4 font-medium text-secondary">
                         {product.name}
                       </th>
