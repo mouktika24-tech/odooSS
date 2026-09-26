@@ -9,6 +9,8 @@ require('dotenv').config({
 const authRoutes = require('./routes/auth.routes');
 const productsRoutes = require('./routes/products.routes');
 const warehousesRoutes = require('./routes/warehouses.routes');
+const operationsRoutes = require('./src/routes/operationsRoutes');
+const dashboardRoutes = require('./src/routes/dashboardRoutes');
 const { authMiddleware } = require('./middleware/auth');
 
 const app = express();
@@ -46,6 +48,8 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/products', authMiddleware, productsRoutes);
 app.use('/api', authMiddleware, warehousesRoutes);
+app.use('/api/operations', operationsRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
