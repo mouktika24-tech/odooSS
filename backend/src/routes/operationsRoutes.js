@@ -208,7 +208,71 @@ router.put("/:id/validate", async (req, res) => {
 
 router.get("/ledger", async (req, res) => {
     try {
-        const result = await pool.query(`
+        const {
+            date_from,
+            date_to,
+            product_id,
+            operation_type,
+            page,
+            limit
+        } = req.query;
+
+        const conditions = [];
+        const values = [];
+
+        const isValidDate = (value) => {
+            if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                return false;
+            }
+
+            const parsedDate = new Date(`${value}T00:00:00.000Z`);
+            return !Number.isNaN(parsedDate.getTime()) &&
+                parsedDate.toISOString().slice(0, 10) === value;
+        };
+
+        if (date_from && !isValidDate(date_from)) {
+            return res.status(400).json({ message: "date_from must use YYYY-MM-DD format" });
+        }
+
+        if (date_to && !isValidDate(date_to)) {
+            return res.status(400).json({ message: "date_to must use YYYY-MM-DD format" });
+        }
+
+        if (date_from && date_to && date_from > date_to) {
+            return res.status(400).json({ message: "date_from must be on or before date_to" });
+        }
+
+        if (date_from) {
+            values.push(date_from);
+            conditions.push(`sl.timestamp >= $${values.length}::date`);
+        }
+
+        if (date_to) {
+            values.push(date_to);
+            conditions.push(`sl.timestamp < ($${values.length}::date + INTERVAL '1 day')`);
+        }
+
+        if (product_id !== undefined) {
+            const parsedProductId = Number(product_id);
+            if (!Number.isSafeInteger(parsedProductId) || parsedProductId <= 0) {
+                return res.status(400).json({ message: "product_id must be a positive integer" });
+            }
+
+            values.push(parsedProductId);
+            conditions.push(`sl.product_id = $${values.length}`);
+        }
+
+        if (operation_type !== undefined) {
+            const validOperationTypes = ["RECEIPT", "DELIVERY", "INTERNAL", "ADJUSTMENT"];
+            if (!validOperationTypes.includes(operation_type)) {
+                return res.status(400).json({ message: "Invalid operation_type" });
+            }
+
+            values.push(operation_type);
+            conditions.push(`op.type = $${values.length}`);
+        }
+
+        let query = `
             SELECT
                 sl.id,
                 sl.product_id,
@@ -242,10 +306,49 @@ router.get("/ledger", async (req, res) => {
             LEFT JOIN users u
                 ON u.id = sl.created_by
 
-            ORDER BY sl.timestamp DESC;
-        `);
+            LEFT JOIN stock_operations op
+                ON op.reference_no = sl.reference_doc
+        `;
 
-        res.json(result.rows);
+        if (conditions.length > 0) {
+            query += ` WHERE ${conditions.join(" AND ")}`;
+        }
+
+        const parsedPage = page === undefined ? 1 : Number(page);
+        const parsedLimit = limit === undefined ? 10 : Number(limit);
+
+        if (!Number.isSafeInteger(parsedPage) || parsedPage <= 0) {
+            return res.status(400).json({ message: "page must be a positive integer" });
+        }
+
+        if (!Number.isSafeInteger(parsedLimit) || parsedLimit <= 0 || parsedLimit > 100) {
+            return res.status(400).json({ message: "limit must be an integer between 1 and 100" });
+        }
+
+        const offset = (parsedPage - 1) * parsedLimit;
+        if (!Number.isSafeInteger(offset)) {
+            return res.status(400).json({ message: "page is too large" });
+        }
+
+        const fromIndex = query.indexOf("FROM stock_ledger sl");
+        const countQuery = `SELECT COUNT(*) AS total ${query.slice(fromIndex)};`;
+        const countResult = await pool.query(countQuery, values);
+        const total = Number(countResult.rows[0].total);
+
+        const dataValues = [...values, parsedLimit, offset];
+        query += ` ORDER BY sl.timestamp DESC, sl.id DESC LIMIT $${dataValues.length - 1} OFFSET $${dataValues.length};`;
+
+        const result = await pool.query(query, dataValues);
+
+        res.json({
+            data: result.rows,
+            pagination: {
+                page: parsedPage,
+                limit: parsedLimit,
+                total,
+                total_pages: Math.ceil(total / parsedLimit)
+            }
+        });
 
     } catch (error) {
         console.error("Error fetching stock ledger:", error.message);
