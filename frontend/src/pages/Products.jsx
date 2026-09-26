@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, Eye, LoaderCircle, Package, Pencil, Plus, Search } from 'lucide-react'
+import ProductCreateModal from '../components/ProductCreateModal.jsx'
 import api from '../services/api.js'
 
 function getList(data, key) {
@@ -45,6 +46,19 @@ function Products() {
   const [search, setSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [requestKey, setRequestKey] = useState(0)
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const newProductButtonRef = useRef(null)
+
+  function closeCreateModal() {
+    setCreateModalOpen(false)
+    requestAnimationFrame(() => newProductButtonRef.current?.focus())
+  }
+
+  function handleProductCreated() {
+    setCreateModalOpen(false)
+    setRequestKey((key) => key + 1)
+    requestAnimationFrame(() => newProductButtonRef.current?.focus())
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -109,7 +123,9 @@ function Products() {
           </p>
         </div>
         <button
+          ref={newProductButtonRef}
           type="button"
+          onClick={() => setCreateModalOpen(true)}
           className="inline-flex h-10 items-center justify-center gap-2 self-start rounded-lg bg-primary px-4 text-sm font-semibold text-white transition-colors hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:self-auto"
         >
           <Plus aria-hidden="true" size={17} />
@@ -257,6 +273,15 @@ function Products() {
           </div>
         )}
       </div>
+
+      {createModalOpen && (
+        <ProductCreateModal
+          categories={categories}
+          categoryUnavailable={categoryError}
+          onClose={closeCreateModal}
+          onCreated={handleProductCreated}
+        />
+      )}
     </section>
   )
 }
