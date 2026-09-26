@@ -1,10 +1,30 @@
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import AppLayout from './components/AppLayout.jsx'
+
+function PlaceholderPage({ title }) {
+  return (
+    <section aria-labelledby="page-title" className="mx-auto max-w-7xl">
+      <h1 id="page-title" className="text-2xl font-semibold text-secondary">
+        {title}
+      </h1>
+    </section>
+  )
+}
+
 function App() {
   return (
-    <main className="min-h-screen bg-background px-6 py-12 text-secondary">
-      <div className="mx-auto max-w-7xl">
-        <p className="text-sm font-semibold text-primary">StockSense</p>
-      </div>
-    </main>
+    <BrowserRouter>
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<PlaceholderPage title="Dashboard" />} />
+          <Route path="/dashboard" element={<PlaceholderPage title="Dashboard" />} />
+          <Route path="/products" element={<PlaceholderPage title="Products" />} />
+          <Route path="/operations" element={<PlaceholderPage title="Operations" />} />
+          <Route path="/move-history" element={<PlaceholderPage title="Move History" />} />
+          <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   )
 }
 
