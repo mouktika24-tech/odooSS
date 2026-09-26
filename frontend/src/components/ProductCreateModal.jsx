@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, LoaderCircle, X } from 'lucide-react'
 import api from '../services/api.js'
+import { getApiErrorMessage } from '../services/apiErrors.js'
 
 const initialValues = {
   name: '',
@@ -23,8 +24,8 @@ function getErrors(values) {
 
   if (values.initialStock.trim() !== '') {
     const stock = Number(values.initialStock)
-    if (!Number.isFinite(stock) || stock < 0) {
-      errors.initialStock = 'Initial stock must be a non-negative number.'
+    if (!Number.isInteger(stock) || stock < 0) {
+      errors.initialStock = 'Initial stock must be a non-negative whole number.'
     }
   }
 
@@ -88,17 +89,26 @@ function ProductCreateModal({ categories, categoryUnavailable, onClose, onCreate
     const categoryId = Number(values.categoryId)
 
     try {
-      await api.post('/products', {
+      const response = await api.post('/products', {
         name: values.name.trim(),
         sku: values.sku.trim(),
         category_id: Number.isNaN(categoryId) ? values.categoryId : categoryId,
         uom: values.uom.trim(),
+        min_stock_alert: 0,
         current_stock: values.initialStock.trim() === '' ? 0 : Number(values.initialStock),
       })
+      if (response.data?.success !== true || !response.data.data) {
+        throw new Error('Product creation response did not match the backend contract.')
+      }
       setValues(initialValues)
       onCreated()
-    } catch {
-      setFormError('The product could not be created. Check your connection and try again.')
+    } catch (error) {
+      setFormError(
+        getApiErrorMessage(
+          error,
+          'The product could not be created. Check your connection and try again.',
+        ),
+      )
     } finally {
       setSubmitting(false)
     }
@@ -260,7 +270,7 @@ function ProductCreateModal({ categories, categoryUnavailable, onClose, onCreate
               name="current_stock"
               type="number"
               min="0"
-              step="any"
+              step="1"
               inputMode="decimal"
               value={values.initialStock}
               onChange={(event) => updateField('initialStock', event.target.value)}

@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { Eye, EyeOff } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Eye, EyeOff, LoaderCircle } from 'lucide-react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import AuthShell from '../components/AuthShell.jsx'
+import api, { setAuthToken } from '../services/api.js'
+import { getApiErrorMessage } from '../services/apiErrors.js'
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const inputBaseClass =
@@ -20,24 +22,56 @@ function getPasswordError(password) {
 }
 
 function Login() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [touched, setTouched] = useState({})
   const [submitted, setSubmitted] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [passwordVisible, setPasswordVisible] = useState(false)
-  const [statusMessage, setStatusMessage] = useState('')
+  const [feedback, setFeedback] = useState(() =>
+    location.state?.notice ? { type: 'success', message: location.state.notice } : null,
+  )
 
   const emailError = touched.email || submitted ? getEmailError(email) : ''
   const passwordError = touched.password || submitted ? getPasswordError(password) : ''
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
     setSubmitted(true)
-    setStatusMessage(
-      getEmailError(email) || getPasswordError(password)
-        ? 'Correct the highlighted fields to continue.'
-        : 'Authentication is not connected yet.',
-    )
+
+    if (getEmailError(email) || getPasswordError(password)) {
+      setFeedback({ type: 'error', message: 'Correct the highlighted fields to continue.' })
+      return
+    }
+
+    setIsSubmitting(true)
+    setFeedback(null)
+    try {
+      const response = await api.post('/auth/login', {
+        email: email.trim(),
+        password,
+      })
+
+      if (response.data?.success !== true || typeof response.data.token !== 'string') {
+        setFeedback({
+          type: 'error',
+          message: 'The login response did not include a valid session. Please try again.',
+        })
+        return
+      }
+
+      setAuthToken(response.data.token)
+      navigate('/dashboard', { replace: true })
+    } catch (error) {
+      setFeedback({
+        type: 'error',
+        message: getApiErrorMessage(error, 'Unable to sign in right now. Check your connection and try again.'),
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -57,7 +91,7 @@ function Login() {
             onChange={(event) => {
               setEmail(event.target.value)
               setTouched((current) => ({ ...current, email: true }))
-              setStatusMessage('')
+              setFeedback(null)
             }}
             onBlur={() => setTouched((current) => ({ ...current, email: true }))}
             aria-invalid={Boolean(emailError)}
@@ -95,7 +129,7 @@ function Login() {
               onChange={(event) => {
                 setPassword(event.target.value)
                 setTouched((current) => ({ ...current, password: true }))
-                setStatusMessage('')
+                setFeedback(null)
               }}
               onBlur={() => setTouched((current) => ({ ...current, password: true }))}
               aria-invalid={Boolean(passwordError)}
@@ -121,14 +155,19 @@ function Login() {
 
         <button
           type="submit"
-          className="h-11 w-full rounded-lg bg-primary px-4 text-sm font-semibold text-white transition-colors hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          disabled={isSubmitting}
+          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-white transition-colors hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Log in
+          {isSubmitting && <LoaderCircle aria-hidden="true" size={16} className="animate-spin" />}
+          {isSubmitting ? 'Signing in...' : 'Log in'}
         </button>
 
-        {statusMessage && (
-          <p role="status" className="text-sm text-secondary/70">
-            {statusMessage}
+        {feedback && (
+          <p
+            role={feedback.type === 'error' ? 'alert' : 'status'}
+            className={`text-sm ${feedback.type === 'error' ? 'text-red-700' : 'text-teal-800'}`}
+          >
+            {feedback.message}
           </p>
         )}
 

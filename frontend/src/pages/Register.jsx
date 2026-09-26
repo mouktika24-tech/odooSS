@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { Eye, EyeOff } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Eye, EyeOff, LoaderCircle } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
 import AuthShell from '../components/AuthShell.jsx'
+import api from '../services/api.js'
+import { getApiErrorMessage } from '../services/apiErrors.js'
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const inputBaseClass =
@@ -15,7 +17,7 @@ function getFieldError(field, values) {
   }
   if (field === 'password') {
     if (!values.password) return 'Password is required.'
-    if (values.password.length < 6) return 'Password must be at least 6 characters.'
+    if (values.password.length < 8) return 'Password must be at least 8 characters.'
   }
   if (field === 'confirmPassword') {
     if (!values.confirmPassword) return 'Please confirm your password.'
@@ -25,6 +27,7 @@ function getFieldError(field, values) {
 }
 
 function Register() {
+  const navigate = useNavigate()
   const [values, setValues] = useState({
     name: '',
     email: '',
@@ -33,9 +36,10 @@ function Register() {
   })
   const [touched, setTouched] = useState({})
   const [submitted, setSubmitted] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [passwordVisible, setPasswordVisible] = useState(false)
   const [confirmVisible, setConfirmVisible] = useState(false)
-  const [statusMessage, setStatusMessage] = useState('')
+  const [feedback, setFeedback] = useState(null)
 
   const errors = Object.fromEntries(
     Object.keys(values).map((field) => [
@@ -47,17 +51,50 @@ function Register() {
   function updateField(field, value) {
     setValues((current) => ({ ...current, [field]: value }))
     setTouched((current) => ({ ...current, [field]: true }))
-    setStatusMessage('')
+    setFeedback(null)
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
     setSubmitted(true)
-    setStatusMessage(
-      Object.keys(values).some((field) => getFieldError(field, values))
-        ? 'Correct the highlighted fields to continue.'
-        : 'Account creation is not connected yet.',
-    )
+
+    if (Object.keys(values).some((field) => getFieldError(field, values))) {
+      setFeedback({ type: 'error', message: 'Correct the highlighted fields to continue.' })
+      return
+    }
+
+    setIsSubmitting(true)
+    setFeedback(null)
+    try {
+      const response = await api.post('/auth/register', {
+        name: values.name.trim(),
+        email: values.email.trim(),
+        password: values.password,
+      })
+
+      if (response.data?.success !== true || !response.data.user) {
+        setFeedback({
+          type: 'error',
+          message: 'Registration could not be confirmed. Please try again.',
+        })
+        return
+      }
+
+      navigate('/login', {
+        replace: true,
+        state: { notice: 'Account created successfully. Please sign in.' },
+      })
+    } catch (error) {
+      setFeedback({
+        type: 'error',
+        message: getApiErrorMessage(
+          error,
+          'Unable to create your account right now. Check your connection and try again.',
+        ),
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   function fieldClass(field) {
@@ -78,6 +115,7 @@ function Register() {
             name={field}
             type={visible ? 'text' : 'password'}
             required
+            minLength={8}
             autoComplete={autocomplete}
             value={values[field]}
             onChange={(event) => updateField(field, event.target.value)}
@@ -173,14 +211,19 @@ function Register() {
 
         <button
           type="submit"
-          className="h-11 w-full rounded-lg bg-primary px-4 text-sm font-semibold text-white transition-colors hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          disabled={isSubmitting}
+          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-white transition-colors hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Register
+          {isSubmitting && <LoaderCircle aria-hidden="true" size={16} className="animate-spin" />}
+          {isSubmitting ? 'Creating account...' : 'Register'}
         </button>
 
-        {statusMessage && (
-          <p role="status" className="text-sm text-secondary/70">
-            {statusMessage}
+        {feedback && (
+          <p
+            role={feedback.type === 'error' ? 'alert' : 'status'}
+            className={`text-sm ${feedback.type === 'error' ? 'text-red-700' : 'text-teal-800'}`}
+          >
+            {feedback.message}
           </p>
         )}
 

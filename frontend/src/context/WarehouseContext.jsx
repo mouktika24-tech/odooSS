@@ -39,6 +39,7 @@ function persistWarehouse(warehouse) {
 function getWarehouseList(data) {
   if (Array.isArray(data)) return data
   if (Array.isArray(data?.warehouses)) return data.warehouses
+  if (Array.isArray(data?.data)) return data.data
   return []
 }
 

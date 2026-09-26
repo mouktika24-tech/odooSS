@@ -3,10 +3,12 @@ import { AlertCircle, Eye, LoaderCircle, Package, Pencil, Plus, Search } from 'l
 import ProductCreateModal from '../components/ProductCreateModal.jsx'
 import { useWarehouse } from '../context/useWarehouse.js'
 import api from '../services/api.js'
+import { getApiErrorMessage } from '../services/apiErrors.js'
 
 function getList(data, key) {
   if (Array.isArray(data)) return data
   if (Array.isArray(data?.[key])) return data[key]
+  if (Array.isArray(data?.data)) return data.data
   return []
 }
 
@@ -81,7 +83,12 @@ function Products() {
         setProducts(getList(productsResult.value.data, 'products'))
       } else {
         setProducts([])
-        setError('Products could not be loaded. Check your connection and try again.')
+        setError(
+          getApiErrorMessage(
+            productsResult.reason,
+            'Products could not be loaded. Check your connection and try again.',
+          ),
+        )
       }
 
       if (categoriesResult.status === 'fulfilled') {
