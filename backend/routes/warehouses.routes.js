@@ -19,7 +19,7 @@ const normalizeText = (value) => {
   return value.trim();
 };
 
-router.get('/', async (req, res) => {
+router.get('/warehouses', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, name, code, address
@@ -44,7 +44,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/warehouses', async (req, res) => {
   try {
     const { name, code, address } = req.body;
     const warehouseName = normalizeText(name);
