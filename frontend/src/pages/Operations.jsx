@@ -11,10 +11,10 @@ import {
 import api, { getErrorMessage, getList } from '../services/api.js'
 
 const operationTabs = [
-  { id: 'RECEIPT', label: 'Receipts' },
-  { id: 'DELIVERY', label: 'Deliveries' },
-  { id: 'INTERNAL', label: 'Transfers' },
-  { id: 'ADJUSTMENT', label: 'Adjustments' },
+  { id: 'RECEIPT', label: 'Receipts', singular: 'Receipt' },
+  { id: 'DELIVERY', label: 'Deliveries', singular: 'Delivery' },
+  { id: 'INTERNAL', label: 'Transfers', singular: 'Transfer' },
+  { id: 'ADJUSTMENT', label: 'Adjustments', singular: 'Adjustment' },
 ]
 
 const statusStyles = {
@@ -129,7 +129,7 @@ function Operations({ initialType, createToken, onToast }) {
         <div><p className="text-sm font-semibold text-odoo-teal">WAREHOUSE</p><h1 className="mt-1 text-2xl font-bold text-odoo-dark sm:text-[28px]">Operations</h1><p className="mt-2 text-sm text-slate-500">Manage receipts, deliveries, transfers, and adjustments.</p></div>
         <div className="flex gap-2">
           <button type="button" onClick={refreshOperations} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50" aria-label="Refresh operations" title="Refresh operations"><RefreshCw size={16} /><span className="hidden sm:inline">Refresh</span></button>
-          <button type="button" onClick={() => { setReference(''); setFormError(''); setIsCreateOpen(true) }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-odoo-purple px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#603e58]"><Plus size={16} /> New {activeTab.label.slice(0, -1).toLowerCase()}</button>
+          <button type="button" onClick={() => { setReference(''); setFormError(''); setIsCreateOpen(true) }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-odoo-purple px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#603e58]"><Plus size={16} /> New {activeTab.singular.toLowerCase()}</button>
         </div>
       </div>
 
@@ -164,9 +164,9 @@ function Operations({ initialType, createToken, onToast }) {
 
       {isCreateOpen && <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/40 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !creating) setIsCreateOpen(false) }}>
         <section role="dialog" aria-modal="true" aria-labelledby="create-operation-title" className="w-full max-w-md rounded-lg bg-white shadow-xl">
-          <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4"><div><h2 id="create-operation-title" className="text-base font-bold text-odoo-dark">New {activeTab.label.slice(0, -1).toLowerCase()}</h2><p className="mt-1 text-xs text-slate-500">Create a draft warehouse operation.</p></div><button type="button" onClick={() => setIsCreateOpen(false)} disabled={creating} aria-label="Close dialog" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"><X size={18} /></button></div>
+          <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4"><div><h2 id="create-operation-title" className="text-base font-bold text-odoo-dark">New {activeTab.singular.toLowerCase()}</h2><p className="mt-1 text-xs text-slate-500">Create a draft warehouse operation.</p></div><button type="button" onClick={() => setIsCreateOpen(false)} disabled={creating} aria-label="Close dialog" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"><X size={18} /></button></div>
           <form onSubmit={createOperation} className="space-y-4 p-5">
-            <label className="block text-sm font-medium text-slate-700">Operation type<select value={activeType} onChange={(event) => selectOperationType(event.target.value)} className="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15">{operationTabs.map((tab) => <option key={tab.id} value={tab.id}>{tab.label.slice(0, -1)}</option>)}</select></label>
+            <label className="block text-sm font-medium text-slate-700">Operation type<select value={activeType} onChange={(event) => selectOperationType(event.target.value)} className="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15">{operationTabs.map((tab) => <option key={tab.id} value={tab.id}>{tab.singular}</option>)}</select></label>
             <label className="block text-sm font-medium text-slate-700">Reference number <span className="text-red-600">*</span><input value={reference} onChange={(event) => { setReference(event.target.value); setFormError('') }} maxLength={40} required autoFocus placeholder="e.g. WH/IN/0001" aria-invalid={Boolean(formError)} aria-describedby={formError ? 'operation-form-error' : 'operation-reference-hint'} className="mt-1.5 block w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15" /><span id="operation-reference-hint" className="mt-1.5 block text-xs text-slate-400">Up to 40 letters, numbers, slashes, hyphens, or underscores.</span></label>
             {formError && <p id="operation-form-error" role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>}
             <div className="flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" onClick={() => setIsCreateOpen(false)} disabled={creating} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancel</button><button type="submit" disabled={creating} className="inline-flex items-center gap-2 rounded-lg bg-odoo-purple px-4 py-2 text-sm font-semibold text-white hover:bg-[#603e58] disabled:opacity-60">{creating && <LoaderCircle size={15} className="animate-spin" />}Create draft</button></div>

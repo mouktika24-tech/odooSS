@@ -82,7 +82,7 @@ function App() {
       <main className="min-w-0 flex-1">
         <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-7">
           <div className="flex items-center gap-2 text-sm"><span className="text-slate-400">Inventory</span><span className="text-slate-300">/</span><span className="font-semibold text-slate-700">{activeLabel}</span></div>
-          <div className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600"><span className="h-2 w-2 rounded-full bg-emerald-500" />Live workspace</div>
+          <div className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600"><span className="h-2 w-2 rounded-full bg-odoo-teal" />Inventory workspace</div>
         </header>
 
         <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-7 sm:py-8">

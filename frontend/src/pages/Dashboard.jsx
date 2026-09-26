@@ -89,7 +89,7 @@ function Dashboard({ onQuickCreate }) {
         <div>
           <p className="text-sm font-semibold text-odoo-teal">STOCK CONTROL</p>
           <h1 className="mt-1 text-2xl font-bold text-odoo-dark sm:text-[28px]">Overview</h1>
-          <p className="mt-2 text-sm text-slate-500">A live view of inventory and warehouse activity.</p>
+          <p className="mt-2 text-sm text-slate-500">Stock levels and warehouse activity at a glance.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => onQuickCreate('RECEIPT')} className="inline-flex items-center justify-center gap-2 rounded-lg bg-odoo-purple px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#603e58] focus:outline-none focus:ring-2 focus:ring-odoo-purple focus:ring-offset-2">
@@ -133,7 +133,7 @@ function Dashboard({ onQuickCreate }) {
         <div className="rounded-lg border border-slate-200 bg-white">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
             <div><h2 className="text-sm font-bold text-odoo-dark">Warehouse activity</h2><p className="mt-1 text-xs text-slate-500">Recent stock operations</p></div>
-            <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-500">LIVE</span>
+            <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-500">RECENT</span>
           </div>
           <div className="flex min-h-40 flex-col items-center justify-center px-5 py-8 text-center">
             <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><Boxes size={20} /></span>

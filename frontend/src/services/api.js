@@ -7,6 +7,14 @@ const api = axios.create({
   },
 })
 
+api.interceptors.response.use((response) => {
+  const contentType = response.headers['content-type'] || ''
+  if (contentType.includes('text/html')) {
+    throw new Error('Inventory API is not connected. Set VITE_API_URL to the backend API URL.')
+  }
+  return response
+})
+
 export function getErrorMessage(error, fallback) {
   return error.response?.data?.message || error.message || fallback
 }
