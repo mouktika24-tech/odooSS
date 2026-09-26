@@ -10,6 +10,7 @@ import {
 import Dashboard from './pages/Dashboard.jsx'
 import MoveHistory from './pages/MoveHistory.jsx'
 import Operations from './pages/Operations.jsx'
+import { useOfflineMode } from './services/api.js'
 
 const navigation = [
   { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
@@ -22,6 +23,7 @@ function App() {
   const [operationType, setOperationType] = useState('RECEIPT')
   const [createToken, setCreateToken] = useState(0)
   const [toast, setToast] = useState(null)
+  const offlineMode = useOfflineMode()
 
   function notify(message, tone = 'success') {
     setToast({ message, tone })
@@ -74,7 +76,7 @@ function App() {
         <div className="mt-auto hidden border-t border-slate-100 p-5 md:block">
           <div className="flex items-center gap-3 rounded-lg bg-slate-50 p-3">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50 text-odoo-teal"><PackageCheck size={18} /></span>
-            <div><p className="text-xs font-semibold text-slate-700">Stock operations</p><p className="mt-0.5 text-[11px] text-slate-500">Connected workspace</p></div>
+            <div><p className="text-xs font-semibold text-slate-700">Stock operations</p><p className="mt-0.5 text-[11px] text-slate-500">{offlineMode ? 'Local preview data' : 'Connected workspace'}</p></div>
           </div>
         </div>
       </aside>
@@ -82,7 +84,11 @@ function App() {
       <main className="min-w-0 flex-1">
         <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-7">
           <div className="flex items-center gap-2 text-sm"><span className="text-slate-400">Inventory</span><span className="text-slate-300">/</span><span className="font-semibold text-slate-700">{activeLabel}</span></div>
-          <div className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600"><span className="h-2 w-2 rounded-full bg-odoo-teal" />Inventory workspace</div>
+          {offlineMode ? (
+            <div role="status" className="flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800"><span className="h-2 w-2 rounded-full bg-amber-500" />Offline Preview Mode</div>
+          ) : (
+            <div className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600"><span className="h-2 w-2 rounded-full bg-odoo-teal" />Inventory workspace</div>
+          )}
         </header>
 
         <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-7 sm:py-8">

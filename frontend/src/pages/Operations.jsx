@@ -8,7 +8,7 @@ import {
   RefreshCw,
   X,
 } from 'lucide-react'
-import api, { getErrorMessage, getList } from '../services/api.js'
+import api, { getErrorMessage, getList, useOfflineMode } from '../services/api.js'
 
 const operationTabs = [
   { id: 'RECEIPT', label: 'Receipts', singular: 'Receipt' },
@@ -52,8 +52,13 @@ function Operations({ initialType, createToken, onToast }) {
   const [pendingId, setPendingId] = useState(null)
   const [isCreateOpen, setIsCreateOpen] = useState(createToken > 0)
   const [reference, setReference] = useState('')
+  const [partnerName, setPartnerName] = useState('')
+  const [products, setProducts] = useState([])
+  const [productId, setProductId] = useState('')
+  const [quantity, setQuantity] = useState('1')
   const [formError, setFormError] = useState('')
   const [creating, setCreating] = useState(false)
+  const offlineMode = useOfflineMode()
 
   useEffect(() => {
     let active = true
@@ -63,6 +68,14 @@ function Operations({ initialType, createToken, onToast }) {
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [activeType, refreshKey])
+
+  useEffect(() => {
+    let active = true
+    api.get('/products')
+      .then(({ data }) => { if (active) setProducts(getList(data, ['products', 'items'])) })
+      .catch(() => {})
+    return () => { active = false }
+  }, [])
 
   function refreshOperations() {
     setLoading(true)
@@ -80,16 +93,23 @@ function Operations({ initialType, createToken, onToast }) {
 
   async function validateOperation(operation) {
     const id = operation.id ?? operation.operation_id
-    if (!id) {
-      onToast('This operation has no identifier and cannot be validated.', 'error')
+    const previousStatus = operation.status
+    if (!id || !['DRAFT', 'READY'].includes(String(previousStatus).toUpperCase())) {
+      onToast('Only Draft or Ready operations can be validated.', 'error')
       return
     }
+
     setPendingId(id)
+    setOperations((current) => current.map((item) => (
+      (item.id ?? item.operation_id) === id ? { ...item, status: 'DONE' } : item
+    )))
     try {
       await api.post(`/operations/${encodeURIComponent(id)}/validate`)
-      onToast(`${getReference(operation)} validated successfully.`)
-      refreshOperations()
+      onToast('Operation validated! Stock ledger updated.')
     } catch (requestError) {
+      setOperations((current) => current.map((item) => (
+        (item.id ?? item.operation_id) === id ? { ...item, status: previousStatus } : item
+      )))
       onToast(getErrorMessage(requestError, 'The operation could not be validated.'), 'error')
     } finally {
       setPendingId(null)
@@ -99,6 +119,8 @@ function Operations({ initialType, createToken, onToast }) {
   async function createOperation(event) {
     event.preventDefault()
     const cleanReference = reference.trim()
+    const cleanPartner = partnerName.trim()
+    const parsedQuantity = Number(quantity)
     if (!cleanReference) {
       setFormError('Enter a reference number.')
       return
@@ -107,14 +129,41 @@ function Operations({ initialType, createToken, onToast }) {
       setFormError('Use up to 40 letters, numbers, slashes, hyphens, or underscores.')
       return
     }
+    if (cleanPartner.length < 2) {
+      setFormError('Enter a vendor, customer, or contact name.')
+      return
+    }
+    if (!productId || !products.some((product) => String(product.id) === productId)) {
+      setFormError('Select a product.')
+      return
+    }
+    if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1) {
+      setFormError('Quantity must be a whole number greater than zero.')
+      return
+    }
+
     setCreating(true)
     setFormError('')
     try {
-      await api.post('/operations', { reference_no: cleanReference, type: activeType })
+      const payload = {
+        reference_no: cleanReference,
+        type: activeType,
+        partner_name: cleanPartner,
+        product_id: productId,
+        demand_qty: parsedQuantity,
+        lines: [{ product_id: productId, demand_qty: parsedQuantity }],
+      }
+      const { data } = await api.post('/operations', payload)
+      const created = data?.operation ?? data?.data ?? data
+      if (created && typeof created === 'object') {
+        setOperations((current) => [created, ...current])
+      }
       setIsCreateOpen(false)
       setReference('')
+      setPartnerName('')
+      setProductId('')
+      setQuantity('1')
       onToast('Draft operation created successfully.')
-      refreshOperations()
     } catch (requestError) {
       setFormError(getErrorMessage(requestError, 'The operation could not be created.'))
     } finally {
@@ -133,7 +182,7 @@ function Operations({ initialType, createToken, onToast }) {
         </div>
       </div>
 
-      {loadError && <div role="alert" className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between"><span>{loadError}</span><button type="button" onClick={refreshOperations} className="inline-flex shrink-0 items-center gap-2 font-semibold hover:underline"><RefreshCw size={14} /> Retry</button></div>}
+      {loadError && !offlineMode && <div role="alert" className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between"><span>{loadError}</span><button type="button" onClick={refreshOperations} className="inline-flex shrink-0 items-center gap-2 font-semibold hover:underline"><RefreshCw size={14} /> Retry</button></div>}
 
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="flex overflow-x-auto border-b border-slate-200 px-3 sm:px-5" role="tablist" aria-label="Operation type">
@@ -152,14 +201,14 @@ function Operations({ initialType, createToken, onToast }) {
                 const status = String(operation.status || 'DRAFT').toUpperCase()
                 const lines = operation.line_count ?? operation.lines?.length ?? operation.move_lines?.length ?? '—'
                 const contact = operation.partner_name ?? operation.contact_name ?? operation.vendor_name ?? operation.customer_name ?? '—'
-                return <tr key={id} className="hover:bg-slate-50/80"><td className="whitespace-nowrap px-5 py-4 font-semibold text-odoo-dark">{getReference(operation)}</td><td className="whitespace-nowrap px-5 py-4 text-slate-600">{contact}</td><td className="whitespace-nowrap px-5 py-4 text-slate-600">{getOperationDate(operation)}</td><td className="px-5 py-4 tabular-nums text-slate-600">{lines}</td><td className="px-5 py-4"><StatusBadge status={status} /></td><td className="px-5 py-4 text-right">{status === 'READY' ? <button type="button" onClick={() => validateOperation(operation)} disabled={pendingId === (operation.id ?? operation.operation_id)} className="inline-flex items-center gap-1.5 rounded-md bg-odoo-teal px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#008b88] disabled:cursor-wait disabled:opacity-60">{pendingId === (operation.id ?? operation.operation_id) ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />}Validate</button> : <span className="text-xs text-slate-400">—</span>}</td></tr>
+                return <tr key={id} className="hover:bg-slate-50/80"><td className="whitespace-nowrap px-5 py-4 font-semibold text-odoo-dark">{getReference(operation)}</td><td className="whitespace-nowrap px-5 py-4 text-slate-600">{contact}</td><td className="whitespace-nowrap px-5 py-4 text-slate-600">{getOperationDate(operation)}</td><td className="px-5 py-4 tabular-nums text-slate-600">{lines}</td><td className="px-5 py-4"><StatusBadge status={status} /></td><td className="px-5 py-4 text-right">{['DRAFT', 'READY'].includes(status) ? <button type="button" onClick={() => validateOperation(operation)} disabled={pendingId === (operation.id ?? operation.operation_id)} className="inline-flex items-center gap-1.5 rounded-md bg-odoo-teal px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#008b88] disabled:cursor-wait disabled:opacity-60">{pendingId === (operation.id ?? operation.operation_id) ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />}Validate</button> : <span className="text-xs text-slate-400">—</span>}</td></tr>
               })}
               {!loading && operations.length === 0 && <tr><td colSpan="6" className="px-5 py-14 text-center"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><ClipboardList size={20} /></span><p className="mt-3 text-sm font-semibold text-slate-700">No {activeTab.label.toLowerCase()} yet</p><p className="mt-1 text-xs text-slate-500">New operations created for this warehouse will appear here.</p></td></tr>}
               {loading && <tr><td colSpan="6" className="px-5 py-14 text-center text-sm text-slate-500">Loading {activeTab.label.toLowerCase()}...</td></tr>}
             </tbody>
           </table>
         </div>
-        <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-400">Operations are loaded from the inventory service.</div>
+        <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-400">{offlineMode ? 'Offline preview data is saved in this browser.' : 'Operations are loaded from the inventory service.'}</div>
       </section>
 
       {isCreateOpen && <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/40 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !creating) setIsCreateOpen(false) }}>
@@ -167,6 +216,9 @@ function Operations({ initialType, createToken, onToast }) {
           <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4"><div><h2 id="create-operation-title" className="text-base font-bold text-odoo-dark">New {activeTab.singular.toLowerCase()}</h2><p className="mt-1 text-xs text-slate-500">Create a draft warehouse operation.</p></div><button type="button" onClick={() => setIsCreateOpen(false)} disabled={creating} aria-label="Close dialog" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"><X size={18} /></button></div>
           <form onSubmit={createOperation} className="space-y-4 p-5">
             <label className="block text-sm font-medium text-slate-700">Operation type<select value={activeType} onChange={(event) => selectOperationType(event.target.value)} className="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15">{operationTabs.map((tab) => <option key={tab.id} value={tab.id}>{tab.singular}</option>)}</select></label>
+            <label className="block text-sm font-medium text-slate-700">{activeType === 'RECEIPT' ? 'Vendor / partner' : activeType === 'DELIVERY' ? 'Customer / recipient' : 'Partner / contact'} <span className="text-red-600">*</span><input value={partnerName} onChange={(event) => { setPartnerName(event.target.value); setFormError('') }} required minLength={2} maxLength={80} placeholder={activeType === 'RECEIPT' ? 'Vendor name' : 'Partner name'} className="mt-1.5 block w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15" /></label>
+            <label className="block text-sm font-medium text-slate-700">Product <span className="text-red-600">*</span><select value={productId} onChange={(event) => { setProductId(event.target.value); setFormError('') }} required className="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15"><option value="">Select a product</option>{products.map((product) => <option key={product.id} value={String(product.id)}>{product.name}{product.sku ? ` · ${product.sku}` : ''}</option>)}</select></label>
+            <label className="block text-sm font-medium text-slate-700">Quantity <span className="text-red-600">*</span><input type="number" value={quantity} onChange={(event) => { setQuantity(event.target.value); setFormError('') }} min="1" step="1" required inputMode="numeric" className="mt-1.5 block w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15" /></label>
             <label className="block text-sm font-medium text-slate-700">Reference number <span className="text-red-600">*</span><input value={reference} onChange={(event) => { setReference(event.target.value); setFormError('') }} maxLength={40} required autoFocus placeholder="e.g. WH/IN/0001" aria-invalid={Boolean(formError)} aria-describedby={formError ? 'operation-form-error' : 'operation-reference-hint'} className="mt-1.5 block w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15" /><span id="operation-reference-hint" className="mt-1.5 block text-xs text-slate-400">Up to 40 letters, numbers, slashes, hyphens, or underscores.</span></label>
             {formError && <p id="operation-form-error" role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>}
             <div className="flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" onClick={() => setIsCreateOpen(false)} disabled={creating} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancel</button><button type="submit" disabled={creating} className="inline-flex items-center gap-2 rounded-lg bg-odoo-purple px-4 py-2 text-sm font-semibold text-white hover:bg-[#603e58] disabled:opacity-60">{creating && <LoaderCircle size={15} className="animate-spin" />}Create draft</button></div>

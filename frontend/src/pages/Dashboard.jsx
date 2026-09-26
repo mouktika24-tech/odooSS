@@ -9,7 +9,7 @@ import {
   RefreshCw,
   Warehouse,
 } from 'lucide-react'
-import api, { getErrorMessage } from '../services/api.js'
+import api, { getErrorMessage, useOfflineMode } from '../services/api.js'
 
 const metricCards = [
   {
@@ -61,6 +61,7 @@ function Dashboard({ onQuickCreate }) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [reload, setReload] = useState(0)
+  const offlineMode = useOfflineMode()
 
   useEffect(() => {
     let active = true
@@ -83,6 +84,8 @@ function Dashboard({ onQuickCreate }) {
     setReload((value) => value + 1)
   }
 
+  const lowStockCount = Number(dashboard?.low_stock ?? 0)
+
   return (
     <div className="space-y-7">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
@@ -101,7 +104,7 @@ function Dashboard({ onQuickCreate }) {
         </div>
       </div>
 
-      {error && (
+      {error && !offlineMode && (
         <div role="alert" className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between">
           <span>{error}</span>
           <button type="button" onClick={refreshDashboard} className="inline-flex shrink-0 items-center gap-2 font-semibold hover:underline"><RefreshCw size={14} /> Retry</button>
@@ -135,11 +138,27 @@ function Dashboard({ onQuickCreate }) {
             <div><h2 className="text-sm font-bold text-odoo-dark">Warehouse activity</h2><p className="mt-1 text-xs text-slate-500">Recent stock operations</p></div>
             <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-500">RECENT</span>
           </div>
-          <div className="flex min-h-40 flex-col items-center justify-center px-5 py-8 text-center">
-            <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><Boxes size={20} /></span>
-            <p className="mt-3 text-sm font-semibold text-slate-700">Activity appears here</p>
-            <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">Recent receipts, deliveries, and transfers will show once the inventory API returns activity.</p>
-          </div>
+          {dashboard?.recent_activity?.length ? (
+            <ul className="divide-y divide-slate-100">
+              {dashboard.recent_activity.slice(0, 5).map((operation) => (
+                <li key={operation.id} className="flex items-center justify-between gap-4 px-5 py-3.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-odoo-dark">{operation.reference_no ?? operation.reference ?? 'Stock operation'}</p>
+                    <p className="mt-1 truncate text-xs text-slate-500">{operation.partner_name ?? operation.type}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${operation.status === 'DONE' ? 'bg-emerald-50 text-emerald-700' : operation.status === 'READY' ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
+                    {String(operation.status || 'DRAFT').charAt(0) + String(operation.status || 'DRAFT').slice(1).toLowerCase()}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="flex min-h-40 flex-col items-center justify-center px-5 py-8 text-center">
+              <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><Boxes size={20} /></span>
+              <p className="mt-3 text-sm font-semibold text-slate-700">No recent operations</p>
+              <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">New receipts, deliveries, and transfers will appear here.</p>
+            </div>
+          )}
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-5">
@@ -148,7 +167,7 @@ function Dashboard({ onQuickCreate }) {
             <div><h2 className="text-sm font-bold text-odoo-dark">Warehouse health</h2><p className="mt-1 text-xs text-slate-500">Stock threshold monitoring</p></div>
           </div>
           <div className="mt-5 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-            {dashboard ? 'Threshold status is available when configured by the inventory service.' : 'Waiting for stock status from the inventory service.'}
+            {dashboard ? `${lowStockCount} ${lowStockCount === 1 ? 'product is' : 'products are'} at or below the minimum stock threshold.` : 'Stock threshold status is loading.'}
           </div>
           <button type="button" onClick={refreshDashboard} className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-odoo-purple hover:underline"><RefreshCw size={13} /> Refresh overview</button>
         </div>
