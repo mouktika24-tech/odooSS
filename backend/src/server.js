@@ -2,11 +2,13 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 const pool = require("./config/db");
+const operationsRoutes = require("./routes/operationsRoutes");
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+app.use("/api/operations", operationsRoutes);
 
 app.get("/", (req, res) => {
     res.json({
