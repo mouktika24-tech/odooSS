@@ -287,16 +287,18 @@ router.put("/:id/validate", async (req, res) => {
                         from_location_id,
                         to_location_id,
                         quantity,
-                        reference_doc
+                        reference_doc,
+                        created_by
                     )
-                    VALUES ($1, $2, $3, $4, $5);
+                    VALUES ($1, $2, $3, $4, $5, $6);
                     `,
                     [
                         item.product_id,
                         operation.source_location_id,
                         operation.dest_location_id,
                         quantity,
-                        operation.reference_no
+                        operation.reference_no,
+                        1
                     ]
                 );
             }
@@ -370,6 +372,56 @@ router.put("/:id/validate", async (req, res) => {
         });
     } finally {
         client.release();
+    }
+});
+
+router.get("/ledger", async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                sl.id,
+                sl.product_id,
+                p.name AS product_name,
+                p.sku,
+
+                sl.from_location_id,
+                fl.name AS from_location_name,
+
+                sl.to_location_id,
+                tl.name AS to_location_name,
+
+                sl.quantity,
+                sl.reference_doc,
+                sl.timestamp,
+
+                sl.created_by,
+                u.name AS created_by_name
+
+            FROM stock_ledger sl
+
+            JOIN products p
+                ON p.id = sl.product_id
+
+            LEFT JOIN locations fl
+                ON fl.id = sl.from_location_id
+
+            LEFT JOIN locations tl
+                ON tl.id = sl.to_location_id
+
+            LEFT JOIN users u
+                ON u.id = sl.created_by
+
+            ORDER BY sl.timestamp DESC;
+        `);
+
+        res.json(result.rows);
+
+    } catch (error) {
+        console.error("Error fetching stock ledger:", error.message);
+
+        res.status(500).json({
+            message: "Failed to fetch stock ledger"
+        });
     }
 });
 
