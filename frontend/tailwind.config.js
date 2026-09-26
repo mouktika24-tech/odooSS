@@ -1,23 +1,20 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       colors: {
-        odoo: {
-          purple: '#714B67',
-          dark: '#1E293B',
-          teal: '#00A09D',
-        }
-      },
-      fontFamily: {
-        sans: ['DM Sans', 'sans-serif'],
+        primary: '#714B67',
+        secondary: '#1E293B',
+        accent: '#00A09D',
+        background: '#F8FAFC',
+        surface: '#FFFFFF',
+        border: '#E2E8F0',
+        'odoo-purple': '#714B67',
+        'odoo-dark': '#1E293B',
+        'odoo-teal': '#00A09D',
       },
     },
   },
   plugins: [],
 }
-
