@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import AppLayout from './components/AppLayout.jsx'
 import Login from './pages/Login.jsx'
+import Products from './pages/Products.jsx'
 import Register from './pages/Register.jsx'
 
 function PlaceholderPage({ title }) {
@@ -22,7 +23,7 @@ function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<PlaceholderPage title="Dashboard" />} />
           <Route path="/dashboard" element={<PlaceholderPage title="Dashboard" />} />
-          <Route path="/products" element={<PlaceholderPage title="Products" />} />
+          <Route path="/products" element={<Products />} />
           <Route path="/operations" element={<PlaceholderPage title="Operations" />} />
           <Route path="/move-history" element={<PlaceholderPage title="Move History" />} />
           <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
