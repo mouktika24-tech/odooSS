@@ -5,7 +5,9 @@ const router = express.Router();
 
 router.get("/", async (req, res) => {
     try {
-        const result = await pool.query(`
+        const { type, status } = req.query;
+
+        let query = `
             SELECT
                 so.id,
                 so.reference_no,
@@ -15,10 +17,31 @@ router.get("/", async (req, res) => {
                 so.created_at,
                 so.validated_at
             FROM stock_operations so
-            ORDER BY so.created_at DESC;
-        `);
+        `;
+
+        const conditions = [];
+        const values = [];
+
+        if (type) {
+            values.push(type);
+            conditions.push(`so.type = $${values.length}`);
+        }
+
+        if (status) {
+            values.push(status);
+            conditions.push(`so.status = $${values.length}`);
+        }
+
+        if (conditions.length > 0) {
+            query += ` WHERE ` + conditions.join(" AND ");
+        }
+
+        query += ` ORDER BY so.created_at DESC;`;
+
+        const result = await pool.query(query, values);
 
         res.json(result.rows);
+
     } catch (error) {
         console.error("Error fetching operations:", error.message);
 
