@@ -6,6 +6,7 @@ import {
   LoaderCircle,
   Plus,
   RefreshCw,
+  Search,
   X,
 } from 'lucide-react'
 import api, { getErrorMessage, getList, useOfflineMode } from '../services/api.js'
@@ -16,6 +17,9 @@ const operationTabs = [
   { id: 'INTERNAL', label: 'Transfers', singular: 'Transfer' },
   { id: 'ADJUSTMENT', label: 'Adjustments', singular: 'Adjustment' },
 ]
+
+const statusFilters = ['ALL', 'DRAFT', 'WAITING', 'READY', 'DONE', 'CANCELED']
+const stockLocations = ['Main Warehouse / Stock', 'Main Warehouse / Packing']
 
 const statusStyles = {
   DRAFT: 'bg-slate-100 text-slate-600 ring-slate-200',
@@ -46,8 +50,11 @@ function getOperationDate(operation) {
 function Operations({ initialType, createToken, onToast }) {
   const [activeType, setActiveType] = useState(initialType || 'RECEIPT')
   const [operations, setOperations] = useState([])
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState('ALL')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const [validationError, setValidationError] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const [pendingId, setPendingId] = useState(null)
   const [isCreateOpen, setIsCreateOpen] = useState(createToken > 0)
@@ -56,6 +63,8 @@ function Operations({ initialType, createToken, onToast }) {
   const [products, setProducts] = useState([])
   const [productId, setProductId] = useState('')
   const [quantity, setQuantity] = useState('1')
+  const [locationName, setLocationName] = useState(stockLocations[0])
+  const [physicalCount, setPhysicalCount] = useState('')
   const [formError, setFormError] = useState('')
   const [creating, setCreating] = useState(false)
   const offlineMode = useOfflineMode()
@@ -87,6 +96,7 @@ function Operations({ initialType, createToken, onToast }) {
     if (type !== activeType) {
       setLoading(true)
       setLoadError('')
+      setValidationError('')
       setActiveType(type)
     }
   }
@@ -99,18 +109,41 @@ function Operations({ initialType, createToken, onToast }) {
       return
     }
 
+    setValidationError('')
+    if (String(operation.type).toUpperCase() === 'DELIVERY') {
+      const requestedByProduct = new Map()
+      const lines = operation.lines ?? operation.move_lines ?? []
+      for (const line of lines) {
+        const productId = line.product_id ?? line.product?.id
+        const requested = Number(line.demand_qty ?? line.quantity ?? line.done_qty ?? 0)
+        if (productId) requestedByProduct.set(String(productId), (requestedByProduct.get(String(productId)) || 0) + requested)
+      }
+
+      for (const [productId, requested] of requestedByProduct) {
+        const product = products.find((item) => String(item.id) === productId)
+        const available = Number(product?.current_stock ?? 0)
+        if (requested > available) {
+          setValidationError(`Validation Halted: Insufficient stock. Requested: ${requested}, Available: ${available}.`)
+          return
+        }
+      }
+    }
+
     setPendingId(id)
     setOperations((current) => current.map((item) => (
       (item.id ?? item.operation_id) === id ? { ...item, status: 'DONE' } : item
     )))
     try {
-      await api.post(`/operations/${encodeURIComponent(id)}/validate`)
+      const { data } = await api.post(`/operations/${encodeURIComponent(id)}/validate`)
+      if (Array.isArray(data?.products)) setProducts(data.products)
       onToast('Operation validated! Stock ledger updated.')
     } catch (requestError) {
       setOperations((current) => current.map((item) => (
         (item.id ?? item.operation_id) === id ? { ...item, status: previousStatus } : item
       )))
-      onToast(getErrorMessage(requestError, 'The operation could not be validated.'), 'error')
+      const message = getErrorMessage(requestError, 'The operation could not be validated.')
+      if (message.startsWith('Validation Halted: Insufficient stock.')) setValidationError(message)
+      else onToast(message, 'error')
     } finally {
       setPendingId(null)
     }
@@ -121,6 +154,7 @@ function Operations({ initialType, createToken, onToast }) {
     const cleanReference = reference.trim()
     const cleanPartner = partnerName.trim()
     const parsedQuantity = Number(quantity)
+    const parsedPhysicalCount = Number(physicalCount)
     if (!cleanReference) {
       setFormError('Enter a reference number.')
       return
@@ -129,7 +163,7 @@ function Operations({ initialType, createToken, onToast }) {
       setFormError('Use up to 40 letters, numbers, slashes, hyphens, or underscores.')
       return
     }
-    if (cleanPartner.length < 2) {
+    if (activeType !== 'ADJUSTMENT' && cleanPartner.length < 2) {
       setFormError('Enter a vendor, customer, or contact name.')
       return
     }
@@ -137,7 +171,15 @@ function Operations({ initialType, createToken, onToast }) {
       setFormError('Select a product.')
       return
     }
-    if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1) {
+    if (activeType === 'ADJUSTMENT' && (!Number.isInteger(parsedPhysicalCount) || parsedPhysicalCount < 0)) {
+      setFormError('Physical counted quantity must be a whole number of zero or greater.')
+      return
+    }
+    if (activeType === 'ADJUSTMENT' && parsedPhysicalCount === recordedStock) {
+      setFormError('Physical count matches recorded stock; no adjustment is needed.')
+      return
+    }
+    if (activeType !== 'ADJUSTMENT' && (!Number.isInteger(parsedQuantity) || parsedQuantity < 1)) {
       setFormError('Quantity must be a whole number greater than zero.')
       return
     }
@@ -148,10 +190,14 @@ function Operations({ initialType, createToken, onToast }) {
       const payload = {
         reference_no: cleanReference,
         type: activeType,
-        partner_name: cleanPartner,
+        partner_name: cleanPartner || 'Physical stock count',
         product_id: productId,
-        demand_qty: parsedQuantity,
-        lines: [{ product_id: productId, demand_qty: parsedQuantity }],
+        demand_qty: activeType === 'ADJUSTMENT' ? undefined : parsedQuantity,
+        lines: [{ product_id: productId, demand_qty: activeType === 'ADJUSTMENT' ? Math.abs(parsedPhysicalCount - recordedStock) : parsedQuantity }],
+        location_name: activeType === 'ADJUSTMENT' ? locationName : undefined,
+        recorded_stock: activeType === 'ADJUSTMENT' ? recordedStock : undefined,
+        physical_count: activeType === 'ADJUSTMENT' ? parsedPhysicalCount : undefined,
+        adjustment_delta: activeType === 'ADJUSTMENT' ? parsedPhysicalCount - recordedStock : undefined,
       }
       const { data } = await api.post('/operations', payload)
       const created = data?.operation ?? data?.data ?? data
@@ -163,6 +209,7 @@ function Operations({ initialType, createToken, onToast }) {
       setPartnerName('')
       setProductId('')
       setQuantity('1')
+      setPhysicalCount('')
       onToast('Draft operation created successfully.')
     } catch (requestError) {
       setFormError(getErrorMessage(requestError, 'The operation could not be created.'))
@@ -172,6 +219,25 @@ function Operations({ initialType, createToken, onToast }) {
   }
 
   const activeTab = operationTabs.find((tab) => tab.id === activeType) ?? operationTabs[0]
+  const selectedProduct = products.find((product) => String(product.id) === productId)
+  const recordedStock = selectedProduct
+    ? Number(selectedProduct.location_stock?.[locationName] ?? selectedProduct.current_stock ?? 0)
+    : null
+  const adjustmentDelta = recordedStock === null || physicalCount === '' ? null : Number(physicalCount) - recordedStock
+  const visibleOperations = operations.filter((operation) => {
+    const normalizedStatus = String(operation.status || 'DRAFT').toUpperCase()
+    if (statusFilter !== 'ALL' && normalizedStatus !== statusFilter && !(statusFilter === 'CANCELED' && normalizedStatus === 'CANCELLED')) return false
+    const search = searchTerm.trim().toLowerCase()
+    if (!search) return true
+    const referenceMatch = getReference(operation).toLowerCase().includes(search)
+    const lineMatch = (operation.lines ?? operation.move_lines ?? []).some((line) => {
+      const productId = line.product_id ?? line.product?.id
+      const product = products.find((item) => String(item.id) === String(productId))
+      const searchable = [line.sku, line.product?.sku, line.product_sku, line.product_name, line.product?.name, product?.sku, product?.name]
+      return searchable.some((value) => String(value || '').toLowerCase().includes(search))
+    })
+    return referenceMatch || lineMatch
+  })
   return (
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
@@ -192,18 +258,31 @@ function Operations({ initialType, createToken, onToast }) {
           <div><h2 className="text-sm font-bold text-odoo-dark">{activeTab.label}</h2><p className="mt-0.5 text-xs text-slate-500">Review the status and validate ready operations.</p></div>
           <div className="inline-flex w-fit items-center gap-2 rounded-md bg-slate-50 px-2.5 py-1.5 text-xs text-slate-500">{loading ? <LoaderCircle className="animate-spin" size={14} /> : <ClipboardList size={14} />}{loading ? 'Loading records' : `${operations.length} ${operations.length === 1 ? 'record' : 'records'}`}<ChevronDown size={13} className="text-slate-400" /></div>
         </div>
+        <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
+          <label className="relative min-w-0 flex-1">
+            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search reference or SKU" aria-label="Search by reference or SKU" className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15" />
+          </label>
+          <label className="flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-500">
+            Status
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter by status" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15">
+              {statusFilters.map((status) => <option key={status} value={status}>{status === 'ALL' ? 'All statuses' : status.charAt(0) + status.slice(1).toLowerCase()}</option>)}
+            </select>
+          </label>
+        </div>
+        {validationError && <div role="alert" className="mx-4 mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800 sm:mx-5">{validationError}</div>}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] border-collapse text-left text-sm">
             <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Reference</th><th className="px-5 py-3">Contact</th><th className="px-5 py-3">Scheduled</th><th className="px-5 py-3">Lines</th><th className="px-5 py-3">Status</th><th className="px-5 py-3 text-right">Action</th></tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {!loading && operations.map((operation, index) => {
+              {!loading && visibleOperations.map((operation, index) => {
                 const id = operation.id ?? operation.operation_id ?? getReference(operation) ?? index
                 const status = String(operation.status || 'DRAFT').toUpperCase()
                 const lines = operation.line_count ?? operation.lines?.length ?? operation.move_lines?.length ?? '—'
                 const contact = operation.partner_name ?? operation.contact_name ?? operation.vendor_name ?? operation.customer_name ?? '—'
                 return <tr key={id} className="hover:bg-slate-50/80"><td className="whitespace-nowrap px-5 py-4 font-semibold text-odoo-dark">{getReference(operation)}</td><td className="whitespace-nowrap px-5 py-4 text-slate-600">{contact}</td><td className="whitespace-nowrap px-5 py-4 text-slate-600">{getOperationDate(operation)}</td><td className="px-5 py-4 tabular-nums text-slate-600">{lines}</td><td className="px-5 py-4"><StatusBadge status={status} /></td><td className="px-5 py-4 text-right">{['DRAFT', 'READY'].includes(status) ? <button type="button" onClick={() => validateOperation(operation)} disabled={pendingId === (operation.id ?? operation.operation_id)} className="inline-flex items-center gap-1.5 rounded-md bg-odoo-teal px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#008b88] disabled:cursor-wait disabled:opacity-60">{pendingId === (operation.id ?? operation.operation_id) ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />}Validate</button> : <span className="text-xs text-slate-400">—</span>}</td></tr>
               })}
-              {!loading && operations.length === 0 && <tr><td colSpan="6" className="px-5 py-14 text-center"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><ClipboardList size={20} /></span><p className="mt-3 text-sm font-semibold text-slate-700">No {activeTab.label.toLowerCase()} yet</p><p className="mt-1 text-xs text-slate-500">New operations created for this warehouse will appear here.</p></td></tr>}
+              {!loading && visibleOperations.length === 0 && <tr><td colSpan="6" className="px-5 py-14 text-center"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><ClipboardList size={20} /></span><p className="mt-3 text-sm font-semibold text-slate-700">{operations.length ? 'No matching operations' : `No ${activeTab.label.toLowerCase()} yet`}</p><p className="mt-1 text-xs text-slate-500">{operations.length ? 'Adjust the search or status filter.' : 'New operations created for this warehouse will appear here.'}</p></td></tr>}
               {loading && <tr><td colSpan="6" className="px-5 py-14 text-center text-sm text-slate-500">Loading {activeTab.label.toLowerCase()}...</td></tr>}
             </tbody>
           </table>
@@ -214,11 +293,16 @@ function Operations({ initialType, createToken, onToast }) {
       {isCreateOpen && <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/40 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !creating) setIsCreateOpen(false) }}>
         <section role="dialog" aria-modal="true" aria-labelledby="create-operation-title" className="w-full max-w-md rounded-lg bg-white shadow-xl">
           <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4"><div><h2 id="create-operation-title" className="text-base font-bold text-odoo-dark">New {activeTab.singular.toLowerCase()}</h2><p className="mt-1 text-xs text-slate-500">Create a draft warehouse operation.</p></div><button type="button" onClick={() => setIsCreateOpen(false)} disabled={creating} aria-label="Close dialog" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"><X size={18} /></button></div>
-          <form onSubmit={createOperation} className="space-y-4 p-5">
+          <form onSubmit={createOperation} className="max-h-[min(80vh,720px)] space-y-4 overflow-y-auto p-5">
             <label className="block text-sm font-medium text-slate-700">Operation type<select value={activeType} onChange={(event) => selectOperationType(event.target.value)} className="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15">{operationTabs.map((tab) => <option key={tab.id} value={tab.id}>{tab.singular}</option>)}</select></label>
-            <label className="block text-sm font-medium text-slate-700">{activeType === 'RECEIPT' ? 'Vendor / partner' : activeType === 'DELIVERY' ? 'Customer / recipient' : 'Partner / contact'} <span className="text-red-600">*</span><input value={partnerName} onChange={(event) => { setPartnerName(event.target.value); setFormError('') }} required minLength={2} maxLength={80} placeholder={activeType === 'RECEIPT' ? 'Vendor name' : 'Partner name'} className="mt-1.5 block w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15" /></label>
+            {activeType !== 'ADJUSTMENT' && <label className="block text-sm font-medium text-slate-700">{activeType === 'RECEIPT' ? 'Vendor / partner' : activeType === 'DELIVERY' ? 'Customer / recipient' : 'Partner / contact'} <span className="text-red-600">*</span><input value={partnerName} onChange={(event) => { setPartnerName(event.target.value); setFormError('') }} required minLength={2} maxLength={80} placeholder={activeType === 'RECEIPT' ? 'Vendor name' : 'Partner name'} className="mt-1.5 block w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15" /></label>}
             <label className="block text-sm font-medium text-slate-700">Product <span className="text-red-600">*</span><select value={productId} onChange={(event) => { setProductId(event.target.value); setFormError('') }} required className="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15"><option value="">Select a product</option>{products.map((product) => <option key={product.id} value={String(product.id)}>{product.name}{product.sku ? ` · ${product.sku}` : ''}</option>)}</select></label>
-            <label className="block text-sm font-medium text-slate-700">Quantity <span className="text-red-600">*</span><input type="number" value={quantity} onChange={(event) => { setQuantity(event.target.value); setFormError('') }} min="1" step="1" required inputMode="numeric" className="mt-1.5 block w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15" /></label>
+            {activeType === 'ADJUSTMENT' ? <>
+              <label className="block text-sm font-medium text-slate-700">Location <span className="text-red-600">*</span><select value={locationName} onChange={(event) => { setLocationName(event.target.value); setFormError('') }} className="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15">{stockLocations.map((location) => <option key={location} value={location}>{location}</option>)}</select></label>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current recorded stock</p><p className="mt-1 text-lg font-bold tabular-nums text-odoo-dark">{recordedStock === null ? 'Select a product' : `${recordedStock.toLocaleString()} ${selectedProduct?.uom || 'units'}`}</p></div>
+              <label className="block text-sm font-medium text-slate-700">Physical counted quantity <span className="text-red-600">*</span><input type="number" value={physicalCount} onChange={(event) => { setPhysicalCount(event.target.value); setFormError('') }} min="0" step="1" required inputMode="numeric" className="mt-1.5 block w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15" /></label>
+              {adjustmentDelta !== null && Number.isFinite(adjustmentDelta) && <p aria-live="polite" className={`rounded-md px-3 py-2 text-sm font-semibold ${adjustmentDelta < 0 ? 'bg-red-50 text-red-700' : adjustmentDelta > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>Delta: {adjustmentDelta > 0 ? '+' : ''}{adjustmentDelta} {adjustmentDelta < 0 ? 'Damaged / Missing' : adjustmentDelta > 0 ? 'Found' : 'No change'}</p>}
+            </> : <label className="block text-sm font-medium text-slate-700">Quantity <span className="text-red-600">*</span><input type="number" value={quantity} onChange={(event) => { setQuantity(event.target.value); setFormError('') }} min="1" step="1" required inputMode="numeric" className="mt-1.5 block w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15" /></label>}
             <label className="block text-sm font-medium text-slate-700">Reference number <span className="text-red-600">*</span><input value={reference} onChange={(event) => { setReference(event.target.value); setFormError('') }} maxLength={40} required autoFocus placeholder="e.g. WH/IN/0001" aria-invalid={Boolean(formError)} aria-describedby={formError ? 'operation-form-error' : 'operation-reference-hint'} className="mt-1.5 block w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15" /><span id="operation-reference-hint" className="mt-1.5 block text-xs text-slate-400">Up to 40 letters, numbers, slashes, hyphens, or underscores.</span></label>
             {formError && <p id="operation-form-error" role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>}
             <div className="flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" onClick={() => setIsCreateOpen(false)} disabled={creating} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancel</button><button type="submit" disabled={creating} className="inline-flex items-center gap-2 rounded-lg bg-odoo-purple px-4 py-2 text-sm font-semibold text-white hover:bg-[#603e58] disabled:opacity-60">{creating && <LoaderCircle size={15} className="animate-spin" />}Create draft</button></div>

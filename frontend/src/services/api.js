@@ -6,6 +6,11 @@ import {
   getOfflineMoves,
   getOfflineOperations,
   getOfflineProducts,
+  persistRemoteCreatedOperation,
+  persistRemoteMoves,
+  persistRemoteOperations,
+  persistRemoteProducts,
+  persistRemoteValidation,
   validateOfflineOperation,
 } from './offlineData.js'
 
@@ -86,6 +91,25 @@ function offlineResponse(config) {
   }
 }
 
+function persistApiResponse(response) {
+  const path = getPath(response.config)
+  const method = String(response.config.method || 'get').toLowerCase()
+  const data = response.data
+
+  if (method === 'get' && path.endsWith('/products')) {
+    persistRemoteProducts(data)
+  } else if (method === 'get' && path.endsWith('/operations/history')) {
+    persistRemoteMoves(data)
+  } else if (method === 'get' && path.endsWith('/operations')) {
+    persistRemoteOperations(response.config.params?.type, data)
+  } else if (method === 'post' && path.endsWith('/operations')) {
+    persistRemoteCreatedOperation(data, getBody(response.config))
+  } else if (method === 'post') {
+    const match = path.match(/\/operations\/([^/]+)\/validate$/)
+    if (match) persistRemoteValidation(decodeURIComponent(match[1]), data)
+  }
+}
+
 function isNetworkFailure(error) {
   return !error.response && !axios.isCancel(error)
 }
@@ -98,6 +122,7 @@ api.interceptors.response.use(
       return offlineResponse(response.config)
     }
     setOfflineMode(false)
+    persistApiResponse(response)
     return response
   },
   (error) => {

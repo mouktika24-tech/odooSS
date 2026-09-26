@@ -1,14 +1,14 @@
 const storageKey = 'stocksense.offline-preview.v1'
 
 const seedProducts = [
-  { id: 'demo-dock', name: 'USB-C Docking Station', sku: 'ACC-001', current_stock: 340, min_stock_alert: 30, uom: 'Units' },
-  { id: 'demo-keyboard', name: 'Wireless Keyboard', sku: 'ACC-014', current_stock: 220, min_stock_alert: 25, uom: 'Units' },
-  { id: 'demo-mouse', name: 'Ergonomic Mouse', sku: 'ACC-018', current_stock: 180, min_stock_alert: 30, uom: 'Units' },
-  { id: 'demo-cable', name: 'HDMI Cable 2m', sku: 'CBL-002', current_stock: 160, min_stock_alert: 30, uom: 'Units' },
-  { id: 'demo-monitor', name: '27-inch Monitor', sku: 'DSP-027', current_stock: 120, min_stock_alert: 15, uom: 'Units' },
-  { id: 'demo-headset', name: 'Noise-canceling Headset', sku: 'AUD-009', current_stock: 140, min_stock_alert: 20, uom: 'Units' },
-  { id: 'demo-adapter', name: 'USB-C Multiport Adapter', sku: 'ACC-031', current_stock: 72, min_stock_alert: 80, uom: 'Units' },
-  { id: 'demo-label', name: 'Thermal Label Roll', sku: 'PKG-004', current_stock: 8, min_stock_alert: 20, uom: 'Rolls' },
+  { id: 'demo-dock', name: 'USB-C Docking Station', sku: 'ACC-001', current_stock: 340, location_stock: { 'Main Warehouse / Stock': 340, 'Main Warehouse / Packing': 0 }, min_stock_alert: 30, uom: 'Units' },
+  { id: 'demo-keyboard', name: 'Wireless Keyboard', sku: 'ACC-014', current_stock: 220, location_stock: { 'Main Warehouse / Stock': 220, 'Main Warehouse / Packing': 0 }, min_stock_alert: 25, uom: 'Units' },
+  { id: 'demo-mouse', name: 'Ergonomic Mouse', sku: 'ACC-018', current_stock: 180, location_stock: { 'Main Warehouse / Stock': 180, 'Main Warehouse / Packing': 0 }, min_stock_alert: 30, uom: 'Units' },
+  { id: 'demo-cable', name: 'HDMI Cable 2m', sku: 'CBL-002', current_stock: 160, location_stock: { 'Main Warehouse / Stock': 160, 'Main Warehouse / Packing': 0 }, min_stock_alert: 30, uom: 'Units' },
+  { id: 'demo-monitor', name: '27-inch Monitor', sku: 'DSP-027', current_stock: 120, location_stock: { 'Main Warehouse / Stock': 120, 'Main Warehouse / Packing': 0 }, min_stock_alert: 15, uom: 'Units' },
+  { id: 'demo-headset', name: 'Noise-canceling Headset', sku: 'AUD-009', current_stock: 140, location_stock: { 'Main Warehouse / Stock': 140, 'Main Warehouse / Packing': 0 }, min_stock_alert: 20, uom: 'Units' },
+  { id: 'demo-adapter', name: 'USB-C Multiport Adapter', sku: 'ACC-031', current_stock: 72, location_stock: { 'Main Warehouse / Stock': 72, 'Main Warehouse / Packing': 0 }, min_stock_alert: 80, uom: 'Units' },
+  { id: 'demo-label', name: 'Thermal Label Roll', sku: 'PKG-004', current_stock: 8, location_stock: { 'Main Warehouse / Stock': 8, 'Main Warehouse / Packing': 0 }, min_stock_alert: 20, uom: 'Rolls' },
 ]
 
 const seedOperations = [
@@ -83,6 +83,13 @@ function getState() {
     if (stored) {
       const parsed = JSON.parse(stored)
       if (Array.isArray(parsed.products) && Array.isArray(parsed.operations) && Array.isArray(parsed.moves)) {
+        parsed.products = parsed.products.map((product) => ({
+          ...product,
+          location_stock: product.location_stock ?? {
+            'Main Warehouse / Stock': Number(product.current_stock || 0),
+            'Main Warehouse / Packing': 0,
+          },
+        }))
         cachedState = parsed
         return cachedState
       }
@@ -108,6 +115,15 @@ export function getOfflineProducts() {
   return getState().products
 }
 
+export function getOfflineProductStock(productId, locationName) {
+  const product = getState().products.find((item) => String(item.id) === String(productId))
+  if (!product) return 0
+  if (locationName && product.location_stock) {
+    return Number(product.location_stock[locationName] ?? 0)
+  }
+  return Number(product.current_stock || 0)
+}
+
 export function getOfflineOperations(type) {
   const operations = getState().operations
   return type ? operations.filter((operation) => operation.type === type) : operations
@@ -115,6 +131,109 @@ export function getOfflineOperations(type) {
 
 export function getOfflineMoves() {
   return getState().moves
+}
+
+function unwrapList(data, keys) {
+  if (Array.isArray(data)) return data
+  for (const key of keys) {
+    if (Array.isArray(data?.[key])) return data[key]
+  }
+  return Array.isArray(data?.data) ? data.data : []
+}
+
+export function persistRemoteProducts(data) {
+  const products = unwrapList(data, ['products', 'items'])
+  const state = getState()
+  state.products = products.map((product) => ({
+    ...product,
+    current_stock: Number(product.current_stock ?? product.stock_on_hand ?? product.quantity ?? 0),
+    location_stock: product.location_stock ?? {
+      'Main Warehouse / Stock': Number(product.current_stock ?? product.stock_on_hand ?? product.quantity ?? 0),
+      'Main Warehouse / Packing': 0,
+    },
+  }))
+  saveState()
+}
+
+export function persistRemoteOperations(type, data) {
+  const operations = unwrapList(data, ['operations', 'items'])
+  const state = getState()
+  const normalizedType = String(type || '').toUpperCase()
+  const retained = normalizedType
+    ? state.operations.filter((operation) => String(operation.type).toUpperCase() !== normalizedType)
+    : []
+  state.operations = [
+    ...operations.map((operation) => ({ ...operation, type: operation.type ?? normalizedType })),
+    ...retained,
+  ]
+  saveState()
+}
+
+export function persistRemoteMoves(data) {
+  const moves = unwrapList(data, ['moves', 'history', 'ledger', 'items'])
+  getState().moves = moves
+  saveState()
+}
+
+export function persistRemoteCreatedOperation(data, payload) {
+  const operation = data?.operation ?? data?.data ?? data
+  if (!operation || typeof operation !== 'object' || Array.isArray(operation)) {
+    try {
+      createOfflineOperation(payload)
+    } catch {
+      // Keep the last valid snapshot if the remote response is not usable locally.
+    }
+    return
+  }
+
+  const state = getState()
+  const identifier = operation.id ?? operation.operation_id
+  const reference = operation.reference_no ?? operation.reference
+  const existingIndex = state.operations.findIndex((item) => (
+    (identifier && String(item.id ?? item.operation_id) === String(identifier))
+    || (reference && item.reference_no === reference)
+  ))
+  if (existingIndex >= 0) {
+    state.operations[existingIndex] = { ...state.operations[existingIndex], ...operation }
+  } else {
+    state.operations.unshift({
+      ...operation,
+      type: operation.type ?? payload.type,
+      status: operation.status ?? 'DRAFT',
+      reference_no: reference ?? payload.reference_no,
+      partner_name: operation.partner_name ?? payload.partner_name,
+      lines: operation.lines ?? payload.lines,
+    })
+  }
+  saveState()
+}
+
+export function persistRemoteValidation(id, data) {
+  const state = getState()
+  const operation = state.operations.find((item) => String(item.id ?? item.operation_id) === String(id))
+  if (!operation) return
+
+  const responseMoves = unwrapList(data, ['moves', 'ledger', 'stock_ledger'])
+  if (responseMoves.length) {
+    operation.status = 'DONE'
+    state.moves = [...responseMoves, ...state.moves]
+    const responseProducts = unwrapList(data, ['products'])
+    if (responseProducts.length) {
+      state.products = responseProducts.map((product) => ({
+        ...product,
+        current_stock: Number(product.current_stock ?? product.stock_on_hand ?? product.quantity ?? 0),
+      }))
+    }
+    saveState()
+    return
+  }
+
+  try {
+    validateOfflineOperation(operation.id ?? operation.operation_id)
+  } catch {
+    operation.status = 'DONE'
+    saveState()
+  }
 }
 
 export function getOfflineDashboard() {
@@ -141,22 +260,35 @@ export function createOfflineOperation(payload) {
   }
 
   const product = state.products.find((item) => item.id === String(payload.product_id))
-  const quantity = Number(payload.demand_qty)
-  if (!product || !Number.isFinite(quantity) || quantity <= 0) {
-    throw new Error('Choose a product and enter a quantity greater than zero.')
-  }
-
   const type = String(payload.type || 'RECEIPT').toUpperCase()
+  const locationName = String(payload.location_name || 'Main Warehouse / Stock')
+  const recordedStock = product
+    ? product.location_stock
+      ? Number(product.location_stock[locationName] ?? 0)
+      : Number(product.current_stock || 0)
+    : 0
+  const physicalCount = Number(payload.physical_count)
+  const adjustmentDelta = physicalCount - recordedStock
+  const quantity = type === 'ADJUSTMENT' ? Math.abs(adjustmentDelta) : Number(payload.demand_qty)
+  if (!product || !Number.isFinite(quantity) || (type === 'ADJUSTMENT' ? adjustmentDelta === 0 : quantity <= 0)) {
+    throw new Error(type === 'ADJUSTMENT' ? 'The physical count matches recorded stock; no adjustment is needed.' : 'Choose a product and enter a quantity greater than zero.')
+  }
+  const adjustmentDirection = adjustmentDelta < 0 ? 'OUT' : 'IN'
   const operation = {
     id: `demo-op-${Date.now()}`,
     reference_no: reference,
     type,
     status: 'DRAFT',
-    partner_name: String(payload.partner_name || '').trim(),
+    partner_name: String(payload.partner_name || (type === 'ADJUSTMENT' ? 'Physical stock count' : '')).trim(),
     scheduled_at: new Date().toISOString(),
-    from_location_name: type === 'RECEIPT' ? 'Vendors' : 'Main Warehouse / Stock',
-    to_location_name: type === 'DELIVERY' ? 'Customers' : 'Main Warehouse / Stock',
-    lines: [{ product_id: product.id, product_name: product.name, quantity, demand_qty: quantity }],
+    from_location_name: type === 'RECEIPT' ? 'Vendors' : type === 'ADJUSTMENT' && adjustmentDirection === 'IN' ? 'Inventory Loss' : locationName,
+    to_location_name: type === 'DELIVERY' ? 'Customers' : type === 'ADJUSTMENT' && adjustmentDirection === 'OUT' ? 'Inventory Loss' : locationName,
+    adjustment_direction: type === 'ADJUSTMENT' ? adjustmentDirection : undefined,
+    location_name: type === 'ADJUSTMENT' ? locationName : undefined,
+    recorded_stock: type === 'ADJUSTMENT' ? recordedStock : undefined,
+    physical_count: type === 'ADJUSTMENT' ? physicalCount : undefined,
+    adjustment_delta: type === 'ADJUSTMENT' ? adjustmentDelta : undefined,
+    lines: [{ product_id: product.id, product_name: product.name, sku: product.sku, quantity, demand_qty: quantity }],
   }
 
   cachedState.operations = [operation, ...state.operations]
@@ -172,6 +304,20 @@ export function validateOfflineOperation(id) {
     throw new Error('Only Draft or Ready operations can be validated.')
   }
 
+  if (operation.type === 'DELIVERY') {
+    const quantitiesByProduct = new Map()
+    for (const line of operation.lines) {
+      quantitiesByProduct.set(line.product_id, (quantitiesByProduct.get(line.product_id) || 0) + Number(line.quantity ?? line.demand_qty ?? 0))
+    }
+    for (const [productId, requested] of quantitiesByProduct) {
+      const product = state.products.find((item) => String(item.id) === String(productId))
+      const available = Number(product?.current_stock || 0)
+      if (requested > available) {
+        throw new Error(`Validation Halted: Insufficient stock. Requested: ${requested}, Available: ${available}.`)
+      }
+    }
+  }
+
   const stockDelta = operation.type === 'RECEIPT'
     ? 1
     : operation.type === 'DELIVERY'
@@ -184,7 +330,15 @@ export function validateOfflineOperation(id) {
     const quantity = Number(line.quantity ?? line.demand_qty ?? 0)
     const product = state.products.find((item) => item.id === line.product_id)
     if (product && stockDelta !== 0) {
-      product.current_stock = Math.max(0, Number(product.current_stock) + stockDelta * quantity)
+      const delta = operation.type === 'ADJUSTMENT'
+        ? Number(operation.adjustment_delta ?? stockDelta * quantity)
+        : stockDelta * quantity
+      product.current_stock = Math.max(0, Number(product.current_stock) + delta)
+      const locationName = operation.location_name ?? (operation.type === 'DELIVERY' ? operation.from_location_name : operation.to_location_name)
+      if (locationName) {
+        product.location_stock ??= { [locationName]: Number(product.current_stock) - delta }
+        product.location_stock[locationName] = Math.max(0, Number(product.location_stock[locationName] || 0) + delta)
+      }
     }
 
     return {
@@ -196,7 +350,7 @@ export function validateOfflineOperation(id) {
       from_location_name: operation.from_location_name,
       to_location_name: operation.to_location_name,
       quantity,
-      quantity_delta: operation.type === 'INTERNAL' ? null : stockDelta * quantity,
+      quantity_delta: operation.type === 'INTERNAL' ? null : operation.type === 'ADJUSTMENT' ? Number(operation.adjustment_delta) : stockDelta * quantity,
       type: operation.type,
       status: 'DONE',
     }
@@ -205,5 +359,5 @@ export function validateOfflineOperation(id) {
   operation.status = 'DONE'
   state.moves = [...newMoves, ...state.moves]
   saveState()
-  return { operation, moves: newMoves }
+  return { operation, moves: newMoves, products: state.products }
 }
