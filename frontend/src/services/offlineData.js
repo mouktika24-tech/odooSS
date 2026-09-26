@@ -1,7 +1,18 @@
 const storageKey = 'stocksense.offline-preview.v1'
 
+export const offlineLocations = [
+  'Main Warehouse / Stock',
+  'Main Warehouse / Packing',
+  'Main Store / Section A',
+  'Rack A',
+  'Production Rack',
+  'Rack B',
+  'Central Warehouse',
+  'Warehouse 2',
+]
+
 const seedProducts = [
-  { id: 'demo-dock', name: 'USB-C Docking Station', sku: 'ACC-001', current_stock: 340, location_stock: { 'Main Warehouse / Stock': 340, 'Main Warehouse / Packing': 0 }, min_stock_alert: 30, uom: 'Units' },
+  { id: 'demo-dock', name: 'USB-C Docking Station', sku: 'ACC-001', current_stock: 340, location_stock: { 'Main Warehouse / Stock': 336, 'Main Warehouse / Packing': 4 }, min_stock_alert: 30, uom: 'Units' },
   { id: 'demo-keyboard', name: 'Wireless Keyboard', sku: 'ACC-014', current_stock: 220, location_stock: { 'Main Warehouse / Stock': 220, 'Main Warehouse / Packing': 0 }, min_stock_alert: 25, uom: 'Units' },
   { id: 'demo-mouse', name: 'Ergonomic Mouse', sku: 'ACC-018', current_stock: 180, location_stock: { 'Main Warehouse / Stock': 180, 'Main Warehouse / Packing': 0 }, min_stock_alert: 30, uom: 'Units' },
   { id: 'demo-cable', name: 'HDMI Cable 2m', sku: 'CBL-002', current_stock: 160, location_stock: { 'Main Warehouse / Stock': 160, 'Main Warehouse / Packing': 0 }, min_stock_alert: 30, uom: 'Units' },
@@ -85,9 +96,10 @@ function getState() {
       if (Array.isArray(parsed.products) && Array.isArray(parsed.operations) && Array.isArray(parsed.moves)) {
         parsed.products = parsed.products.map((product) => ({
           ...product,
-          location_stock: product.location_stock ?? {
+          location_stock: {
+            ...Object.fromEntries(offlineLocations.map((location) => [location, 0])),
             'Main Warehouse / Stock': Number(product.current_stock || 0),
-            'Main Warehouse / Packing': 0,
+            ...product.location_stock,
           },
         }))
         cachedState = parsed
@@ -113,6 +125,10 @@ function saveState() {
 
 export function getOfflineProducts() {
   return getState().products
+}
+
+export function getOfflineLocations() {
+  return offlineLocations
 }
 
 export function getOfflineProductStock(productId, locationName) {
@@ -262,6 +278,11 @@ export function createOfflineOperation(payload) {
   const product = state.products.find((item) => item.id === String(payload.product_id))
   const type = String(payload.type || 'RECEIPT').toUpperCase()
   const locationName = String(payload.location_name || 'Main Warehouse / Stock')
+  const sourceLocation = String(payload.source_location_name || 'Main Warehouse / Stock')
+  const destinationLocation = String(payload.destination_location_name || 'Main Warehouse / Packing')
+  if (type === 'INTERNAL' && sourceLocation === destinationLocation) {
+    throw new Error('Source and destination locations must be different.')
+  }
   const recordedStock = product
     ? product.location_stock
       ? Number(product.location_stock[locationName] ?? 0)
@@ -281,8 +302,10 @@ export function createOfflineOperation(payload) {
     status: 'DRAFT',
     partner_name: String(payload.partner_name || (type === 'ADJUSTMENT' ? 'Physical stock count' : '')).trim(),
     scheduled_at: new Date().toISOString(),
-    from_location_name: type === 'RECEIPT' ? 'Vendors' : type === 'ADJUSTMENT' && adjustmentDirection === 'IN' ? 'Inventory Loss' : locationName,
-    to_location_name: type === 'DELIVERY' ? 'Customers' : type === 'ADJUSTMENT' && adjustmentDirection === 'OUT' ? 'Inventory Loss' : locationName,
+    from_location_name: type === 'RECEIPT' ? 'Vendors' : type === 'ADJUSTMENT' && adjustmentDirection === 'IN' ? 'Inventory Loss' : type === 'INTERNAL' ? sourceLocation : locationName,
+    to_location_name: type === 'DELIVERY' ? 'Customers' : type === 'ADJUSTMENT' && adjustmentDirection === 'OUT' ? 'Inventory Loss' : type === 'INTERNAL' ? destinationLocation : locationName,
+    source_location_name: type === 'INTERNAL' ? sourceLocation : undefined,
+    destination_location_name: type === 'INTERNAL' ? destinationLocation : undefined,
     adjustment_direction: type === 'ADJUSTMENT' ? adjustmentDirection : undefined,
     location_name: type === 'ADJUSTMENT' ? locationName : undefined,
     recorded_stock: type === 'ADJUSTMENT' ? recordedStock : undefined,
@@ -318,6 +341,24 @@ export function validateOfflineOperation(id) {
     }
   }
 
+  if (operation.type === 'INTERNAL') {
+    if (operation.from_location_name === operation.to_location_name) {
+      throw new Error('Source and destination locations must be different.')
+    }
+    const quantitiesByProduct = new Map()
+    for (const line of operation.lines) {
+      const productId = String(line.product_id)
+      quantitiesByProduct.set(productId, (quantitiesByProduct.get(productId) || 0) + Number(line.quantity ?? line.demand_qty ?? 0))
+    }
+    for (const [productId, requested] of quantitiesByProduct) {
+      const product = state.products.find((item) => String(item.id) === productId)
+      const available = Number(product?.location_stock?.[operation.from_location_name] ?? 0)
+      if (requested > available) {
+        throw new Error(`Validation Halted: Insufficient stock at ${operation.from_location_name}. Requested: ${requested}, Available: ${available}.`)
+      }
+    }
+  }
+
   const stockDelta = operation.type === 'RECEIPT'
     ? 1
     : operation.type === 'DELIVERY'
@@ -329,6 +370,11 @@ export function validateOfflineOperation(id) {
   const newMoves = operation.lines.map((line, index) => {
     const quantity = Number(line.quantity ?? line.demand_qty ?? 0)
     const product = state.products.find((item) => item.id === line.product_id)
+    if (product && operation.type === 'INTERNAL') {
+      product.location_stock ??= {}
+      product.location_stock[operation.from_location_name] = Number(product.location_stock[operation.from_location_name] || 0) - quantity
+      product.location_stock[operation.to_location_name] = Number(product.location_stock[operation.to_location_name] || 0) + quantity
+    }
     if (product && stockDelta !== 0) {
       const delta = operation.type === 'ADJUSTMENT'
         ? Number(operation.adjustment_delta ?? stockDelta * quantity)
