@@ -3,7 +3,7 @@ const pool = require("../config/db");
 
 const router = express.Router();
 
-router.get("/kpis", async (req, res) => {
+router.get(["/", "/kpis"], async (req, res) => {
     try {
         const result = await pool.query(`
             WITH product_metrics AS (
@@ -59,6 +59,13 @@ router.get("/kpis", async (req, res) => {
 
         const metrics = result.rows[0];
 
+        const activityResult = await pool.query(`
+            SELECT id, reference_no, type, status, partner_name, created_at
+            FROM stock_operations
+            ORDER BY created_at DESC, id DESC
+            LIMIT 5;
+        `);
+
         res.json({
             total_products: Number(metrics.total_products),
             total_stock: Number(metrics.total_stock),
@@ -72,7 +79,8 @@ router.get("/kpis", async (req, res) => {
                 Object.entries(metrics.operation_status_counts).map(
                     ([status, count]) => [status, Number(count)]
                 )
-            )
+            ),
+            recent_activity: activityResult.rows,
         });
 
     } catch (error) {

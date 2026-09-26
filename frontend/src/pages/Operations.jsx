@@ -10,7 +10,7 @@ import {
   X,
 } from 'lucide-react'
 import api, { getErrorMessage, getList, useOfflineMode } from '../services/api.js'
-import { offlineLocations } from '../services/offlineData.js'
+import { useWarehouse } from '../context/useWarehouse.js'
 
 const operationTabs = [
   { id: 'RECEIPT', label: 'Receipts', singular: 'Receipt' },
@@ -48,6 +48,7 @@ function getOperationDate(operation) {
 }
 
 function Operations({ initialType, createToken, onToast }) {
+  const { selectedWarehouse } = useWarehouse()
   const [activeType, setActiveType] = useState(initialType || 'RECEIPT')
   const [operations, setOperations] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -62,6 +63,7 @@ function Operations({ initialType, createToken, onToast }) {
   const [reference, setReference] = useState('')
   const [partnerName, setPartnerName] = useState('')
   const [products, setProducts] = useState([])
+  const [locations, setLocations] = useState([])
   const [productId, setProductId] = useState('')
   const [quantity, setQuantity] = useState('1')
   const [sourceLocation, setSourceLocation] = useState('Main Warehouse / Stock')
@@ -83,11 +85,18 @@ function Operations({ initialType, createToken, onToast }) {
 
   useEffect(() => {
     let active = true
-    api.get('/products')
-      .then(({ data }) => { if (active) setProducts(getList(data, ['products', 'items'])) })
+    Promise.all([
+      api.get('/products'),
+      api.get('/locations', { params: selectedWarehouse?.id ? { warehouse_id: selectedWarehouse.id } : {} }),
+    ])
+      .then(([productResponse, locationResponse]) => {
+        if (!active) return
+        setProducts(getList(productResponse.data, ['products', 'items']))
+        setLocations(getList(locationResponse.data, ['locations', 'items']))
+      })
       .catch(() => {})
     return () => { active = false }
-  }, [])
+  }, [selectedWarehouse?.id])
 
   function refreshOperations() {
     setLoading(true)
@@ -137,7 +146,7 @@ function Operations({ initialType, createToken, onToast }) {
       (item.id ?? item.operation_id) === id ? { ...item, status: 'DONE' } : item
     )))
     try {
-      const { data } = await api.post(`/operations/${encodeURIComponent(id)}/validate`)
+      const { data } = await api.put(`/operations/${encodeURIComponent(id)}/validate`)
       if (Array.isArray(data?.products)) setProducts(data.products)
       onToast('Operation validated! Stock ledger updated.')
     } catch (requestError) {
@@ -201,6 +210,14 @@ function Operations({ initialType, createToken, onToast }) {
         product_id: productId,
         demand_qty: activeType === 'ADJUSTMENT' ? undefined : parsedQuantity,
         lines: [{ product_id: productId, demand_qty: activeType === 'ADJUSTMENT' ? Math.abs(parsedPhysicalCount - recordedStock) : parsedQuantity }],
+        items: [{
+          product_id: productId,
+          demand_qty: activeType === 'ADJUSTMENT' ? Math.abs(parsedPhysicalCount - recordedStock) : parsedQuantity,
+        }],
+        items: [{
+          product_id: productId,
+          demand_qty: activeType === 'ADJUSTMENT' ? Math.abs(parsedPhysicalCount - recordedStock) : parsedQuantity,
+        }],
         location_name: activeType === 'ADJUSTMENT' ? locationName : undefined,
         source_location_name: activeType === 'INTERNAL' ? sourceLocation : undefined,
         destination_location_name: activeType === 'INTERNAL' ? destinationLocation : undefined,
@@ -229,8 +246,9 @@ function Operations({ initialType, createToken, onToast }) {
 
   const activeTab = operationTabs.find((tab) => tab.id === activeType) ?? operationTabs[0]
   const selectedProduct = products.find((product) => String(product.id) === productId)
+  const locationNames = locations.map((location) => location.name)
   const locationOptions = [...new Set([
-    ...offlineLocations,
+    ...locationNames,
     ...products.flatMap((product) => Object.keys(product.location_stock || {})),
     ...operations.flatMap((operation) => [operation.from_location_name, operation.to_location_name, operation.location_name]),
   ].filter(Boolean))].sort((left, right) => left.localeCompare(right))

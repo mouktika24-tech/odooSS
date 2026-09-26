@@ -3,6 +3,7 @@ import axios from 'axios'
 import {
   createOfflineOperation,
   getOfflineDashboard,
+  getOfflineLocations,
   getOfflineMoves,
   getOfflineOperations,
   getOfflineProducts,
@@ -25,11 +26,30 @@ const api = axios.create({
 })
 
 let memoryAuthToken = ''
+const AUTH_TOKEN_KEY = 'stocksense.authToken'
+const AUTH_USER_KEY = 'stocksense.authUser'
+
+export function getAuthToken() {
+  if (memoryAuthToken) return memoryAuthToken
+  try {
+    return localStorage.getItem(AUTH_TOKEN_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+export function getAuthUser() {
+  try {
+    return JSON.parse(localStorage.getItem(AUTH_USER_KEY) || 'null')
+  } catch {
+    return null
+  }
+}
 
 export function setAuthToken(token) {
   memoryAuthToken = token
   try {
-    localStorage.setItem('stocksense.authToken', token)
+    localStorage.setItem(AUTH_TOKEN_KEY, token)
   } catch {
     // Keep the token in memory if browser storage is unavailable.
   }
@@ -38,21 +58,23 @@ export function setAuthToken(token) {
 export function clearAuthToken() {
   memoryAuthToken = ''
   try {
-    localStorage.removeItem('stocksense.authToken')
+    localStorage.removeItem(AUTH_TOKEN_KEY)
+    localStorage.removeItem(AUTH_USER_KEY)
   } catch {
     // Storage can be unavailable in restricted browser contexts.
   }
 }
 
-api.interceptors.request.use((config) => {
-  let token = memoryAuthToken
-  if (!token) {
-    try {
-      token = localStorage.getItem('stocksense.authToken') || ''
-    } catch {
-      token = ''
-    }
+export function setAuthUser(user) {
+  try {
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user))
+  } catch {
+    // User details can be fetched again from /auth/me when storage is unavailable.
   }
+}
+
+api.interceptors.request.use((config) => {
+  const token = getAuthToken()
 
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
@@ -101,17 +123,19 @@ function offlineResponse(config) {
   const method = String(config.method || 'get').toLowerCase()
   let data
 
-  if (method === 'get' && path.endsWith('/dashboard')) {
+  if (method === 'get' && (path.endsWith('/dashboard') || path.endsWith('/dashboard/kpis'))) {
     data = { dashboard: getOfflineDashboard() }
-  } else if (method === 'get' && path.endsWith('/operations/history')) {
+  } else if (method === 'get' && (path.endsWith('/operations/history') || path.endsWith('/operations/ledger'))) {
     data = { moves: getOfflineMoves() }
   } else if (method === 'get' && path.endsWith('/operations')) {
     data = { operations: getOfflineOperations(config.params?.type) }
   } else if (method === 'get' && path.endsWith('/products')) {
     data = { products: getOfflineProducts() }
+  } else if (method === 'get' && path.endsWith('/locations')) {
+    data = { data: getOfflineLocations().map((name, index) => ({ id: `demo-location-${index + 1}`, name, type: 'INTERNAL' })) }
   } else if (method === 'post' && path.endsWith('/operations')) {
     data = { operation: createOfflineOperation(getBody(config)) }
-  } else if (method === 'post') {
+  } else if (method === 'post' || method === 'put') {
     const match = path.match(/\/operations\/([^/]+)\/validate$/)
     if (!match) throw new Error('This action is unavailable in offline preview mode.')
     data = validateOfflineOperation(decodeURIComponent(match[1]))
@@ -135,13 +159,13 @@ function persistApiResponse(response) {
 
   if (method === 'get' && path.endsWith('/products')) {
     persistRemoteProducts(data)
-  } else if (method === 'get' && path.endsWith('/operations/history')) {
+  } else if (method === 'get' && (path.endsWith('/operations/history') || path.endsWith('/operations/ledger'))) {
     persistRemoteMoves(data)
   } else if (method === 'get' && path.endsWith('/operations')) {
     persistRemoteOperations(response.config.params?.type, data)
   } else if (method === 'post' && path.endsWith('/operations')) {
     persistRemoteCreatedOperation(data, getBody(response.config))
-  } else if (method === 'post') {
+  } else if (method === 'post' || method === 'put') {
     const match = path.match(/\/operations\/([^/]+)\/validate$/)
     if (match) persistRemoteValidation(decodeURIComponent(match[1]), data)
   }

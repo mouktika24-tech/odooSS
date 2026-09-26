@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertCircle, Eye, LoaderCircle, Package, Pencil, Plus, Search } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
+import { AlertCircle, Eye, LoaderCircle, Package, Pencil, Plus, Search, X } from 'lucide-react'
 import ProductCreateModal from '../components/ProductCreateModal.jsx'
 import { useWarehouse } from '../context/useWarehouse.js'
 import api from '../services/api.js'
@@ -41,17 +42,27 @@ function normalizeCategoryValue(category) {
 }
 
 function Products() {
+  const location = useLocation()
   const { selectedWarehouse } = useWarehouse()
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [categoryError, setCategoryError] = useState(false)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(() => new URLSearchParams(location.search).get('search') || '')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [requestKey, setRequestKey] = useState(0)
   const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [activeProduct, setActiveProduct] = useState(null)
+  const [productMode, setProductMode] = useState('view')
+  const [editValues, setEditValues] = useState(null)
+  const [savingProduct, setSavingProduct] = useState(false)
+  const [productActionError, setProductActionError] = useState('')
   const newProductButtonRef = useRef(null)
+
+  useEffect(() => {
+    setSearch(new URLSearchParams(location.search).get('search') || '')
+  }, [location.search])
 
   function closeCreateModal() {
     setCreateModalOpen(false)
@@ -62,6 +73,51 @@ function Products() {
     setCreateModalOpen(false)
     setRequestKey((key) => key + 1)
     requestAnimationFrame(() => newProductButtonRef.current?.focus())
+  }
+
+  function openProduct(product, mode) {
+    setActiveProduct(product)
+    setProductMode(mode)
+    setProductActionError('')
+    setEditValues({
+      name: product.name || '',
+      sku: product.sku || '',
+      category_id: String(product.category_id ?? ''),
+      uom: product.uom || '',
+      min_stock_alert: String(product.min_stock_alert ?? 0),
+    })
+  }
+
+  async function saveProduct(event) {
+    event.preventDefault()
+    if (!activeProduct || !editValues) return
+    setSavingProduct(true)
+    setProductActionError('')
+    try {
+      const { data } = await api.put(`/products/${activeProduct.id}`, {
+        name: editValues.name.trim(),
+        sku: editValues.sku.trim(),
+        category_id: Number(editValues.category_id),
+        uom: editValues.uom.trim(),
+        min_stock_alert: Number(editValues.min_stock_alert),
+      })
+      const updated = data?.data
+      if (!updated) throw new Error('Product update response did not include the updated record.')
+      setProducts((current) => current.map((product) => product.id === updated.id ? updated : product))
+      setActiveProduct(updated)
+      setEditValues({
+        name: updated.name,
+        sku: updated.sku,
+        category_id: String(updated.category_id),
+        uom: updated.uom,
+        min_stock_alert: String(updated.min_stock_alert),
+      })
+      setProductMode('view')
+    } catch (error) {
+      setProductActionError(getApiErrorMessage(error, 'Product could not be updated.'))
+    } finally {
+      setSavingProduct(false)
+    }
   }
 
   useEffect(() => {
@@ -267,6 +323,7 @@ function Products() {
                         <div className="flex justify-end gap-1">
                           <button
                             type="button"
+                            onClick={() => openProduct(product, 'view')}
                             aria-label={`View ${product.name}`}
                             title="View"
                             className="flex size-8 items-center justify-center rounded-lg text-secondary/65 hover:bg-background hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
@@ -275,6 +332,7 @@ function Products() {
                           </button>
                           <button
                             type="button"
+                            onClick={() => openProduct(product, 'edit')}
                             aria-label={`Edit ${product.name}`}
                             title="Edit"
                             className="flex size-8 items-center justify-center rounded-lg text-secondary/65 hover:bg-background hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
@@ -299,6 +357,50 @@ function Products() {
           onClose={closeCreateModal}
           onCreated={handleProductCreated}
         />
+      )}
+
+      {activeProduct && editValues && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-secondary/45 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !savingProduct) setActiveProduct(null) }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="product-detail-title" className="w-full max-w-xl overflow-hidden rounded-lg border border-border bg-surface shadow-xl">
+            <div className="flex items-start justify-between border-b border-border px-5 py-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-accent">Product catalog</p>
+                <h2 id="product-detail-title" className="mt-1 text-lg font-semibold text-secondary">{productMode === 'edit' ? 'Edit product' : activeProduct.name}</h2>
+              </div>
+              <button type="button" aria-label="Close product details" onClick={() => setActiveProduct(null)} disabled={savingProduct} className="rounded-lg p-2 text-secondary/60 hover:bg-background"><X size={18} /></button>
+            </div>
+            {productMode === 'view' ? (
+              <div className="space-y-4 p-5">
+                <dl className="grid gap-3 sm:grid-cols-2">
+                  <div><dt className="text-xs text-secondary/55">SKU</dt><dd className="mt-1 text-sm font-medium text-secondary">{activeProduct.sku}</dd></div>
+                  <div><dt className="text-xs text-secondary/55">Category</dt><dd className="mt-1 text-sm font-medium text-secondary">{getCategoryName(activeProduct, categories) || '—'}</dd></div>
+                  <div><dt className="text-xs text-secondary/55">Unit of measure</dt><dd className="mt-1 text-sm font-medium text-secondary">{activeProduct.uom || '—'}</dd></div>
+                  <div><dt className="text-xs text-secondary/55">Current stock</dt><dd className="mt-1 text-sm font-medium tabular-nums text-secondary">{Number(activeProduct.current_stock ?? 0).toLocaleString()}</dd></div>
+                  <div><dt className="text-xs text-secondary/55">Low-stock threshold</dt><dd className="mt-1 text-sm font-medium tabular-nums text-secondary">{Number(activeProduct.min_stock_alert ?? 0).toLocaleString()}</dd></div>
+                </dl>
+                <div className="flex justify-end gap-2 border-t border-border pt-4">
+                  <button type="button" onClick={() => setActiveProduct(null)} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-secondary hover:bg-background">Close</button>
+                  <button type="button" onClick={() => setProductMode('edit')} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90"><Pencil size={15} /> Edit product</button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={saveProduct} className="space-y-4 p-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="text-sm font-medium text-secondary">Name<input required value={editValues.name} onChange={(event) => setEditValues((current) => ({ ...current, name: event.target.value }))} className="mt-1.5 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
+                  <label className="text-sm font-medium text-secondary">SKU<input required value={editValues.sku} onChange={(event) => setEditValues((current) => ({ ...current, sku: event.target.value }))} className="mt-1.5 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
+                  <label className="text-sm font-medium text-secondary">Category<select required value={editValues.category_id} onChange={(event) => setEditValues((current) => ({ ...current, category_id: event.target.value }))} className="mt-1.5 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"><option value="">Select category</option>{categories.map((category) => <option key={category.id} value={String(category.id)}>{category.name}</option>)}</select></label>
+                  <label className="text-sm font-medium text-secondary">Unit of measure<input required value={editValues.uom} onChange={(event) => setEditValues((current) => ({ ...current, uom: event.target.value }))} className="mt-1.5 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
+                  <label className="text-sm font-medium text-secondary sm:col-span-2">Low-stock threshold<input required type="number" min="0" step="1" value={editValues.min_stock_alert} onChange={(event) => setEditValues((current) => ({ ...current, min_stock_alert: event.target.value }))} className="mt-1.5 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
+                </div>
+                {productActionError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{productActionError}</p>}
+                <div className="flex justify-end gap-2 border-t border-border pt-4">
+                  <button type="button" disabled={savingProduct} onClick={() => setProductMode('view')} className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-secondary hover:bg-background">Cancel</button>
+                  <button type="submit" disabled={savingProduct} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{savingProduct ? 'Saving...' : 'Save changes'}</button>
+                </div>
+              </form>
+            )}
+          </section>
+        </div>
       )}
     </section>
   )

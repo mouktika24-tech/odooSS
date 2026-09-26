@@ -3,6 +3,7 @@ import { Outlet, useNavigate } from 'react-router-dom'
 import { X } from 'lucide-react'
 import Navbar from './Navbar.jsx'
 import Sidebar from './Sidebar.jsx'
+import { clearAuthToken } from '../services/api.js'
 
 function AppLayout() {
   const [compact, setCompact] = useState(false)
@@ -29,6 +30,11 @@ function AppLayout() {
     window.setTimeout(() => setToast(null), 3800)
   }
 
+  function logout() {
+    clearAuthToken()
+    navigate('/login', { replace: true, state: { notice: 'You have been logged out.' } })
+  }
+
   return (
     <div className="flex min-h-screen bg-background text-secondary">
       {mobileOpen && (
@@ -44,6 +50,7 @@ function AppLayout() {
         mobileOpen={mobileOpen}
         onToggleCompact={() => setCompact((value) => !value)}
         onNavigate={handleSidebarNavigation}
+        onLogout={logout}
       />
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <Navbar onMenuClick={() => setMobileOpen(true)} />

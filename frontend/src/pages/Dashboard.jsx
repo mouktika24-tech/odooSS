@@ -74,7 +74,7 @@ function Dashboard({ onQuickCreate }) {
 
   useEffect(() => {
     let active = true
-    api.get('/dashboard')
+    api.get('/dashboard/kpis')
       .then(({ data }) => {
         if (active) setDashboard(data?.dashboard ?? data?.data ?? data)
       })

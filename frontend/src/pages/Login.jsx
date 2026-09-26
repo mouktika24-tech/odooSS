@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Eye, EyeOff, LoaderCircle } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import AuthShell from '../components/AuthShell.jsx'
-import api, { setAuthToken } from '../services/api.js'
+import api, { setAuthToken, setAuthUser } from '../services/api.js'
 import { getApiErrorMessage } from '../services/apiErrors.js'
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -63,7 +63,8 @@ function Login() {
       }
 
       setAuthToken(response.data.token)
-      navigate('/dashboard', { replace: true })
+      setAuthUser(response.data.user)
+      navigate(location.state?.from?.pathname || '/dashboard', { replace: true })
     } catch (error) {
       setFeedback({
         type: 'error',

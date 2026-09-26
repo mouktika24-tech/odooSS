@@ -27,7 +27,7 @@ const linkClass = (active) =>
       : 'text-white/75 hover:bg-white/10 hover:text-white'
   }`
 
-function Sidebar({ compact, mobileOpen, onToggleCompact, onNavigate }) {
+function Sidebar({ compact, mobileOpen, onToggleCompact, onNavigate, onLogout }) {
   const location = useLocation()
   const selectedView = new URLSearchParams(location.search).get('view')
   const operationsActive = location.pathname === '/operations'
@@ -150,7 +150,7 @@ function Sidebar({ compact, mobileOpen, onToggleCompact, onNavigate }) {
         </NavLink>
         <button
           type="button"
-          onClick={onNavigate}
+          onClick={onLogout}
           title={compact && !mobileOpen ? 'Logout' : undefined}
           aria-label="Logout"
           className={`${linkClass(false)} w-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-white`}

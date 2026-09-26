@@ -157,6 +157,30 @@ async function validateOperation(operationId) {
             // INTERNAL TRANSFER
             else if (operation.type === "INTERNAL") {
 
+                if (!operation.source_location_id || !operation.dest_location_id ||
+                    Number(operation.source_location_id) === Number(operation.dest_location_id)) {
+                    throw new Error("Source and destination locations must be different");
+                }
+
+                const balanceResult = await client.query(
+                    `SELECT COALESCE(SUM(
+                        CASE
+                            WHEN to_location_id = $1 THEN quantity
+                            WHEN from_location_id = $1 THEN -quantity
+                            ELSE 0
+                        END
+                    ), 0) AS balance
+                     FROM stock_ledger
+                     WHERE product_id = $2`,
+                    [operation.source_location_id, item.product_id]
+                );
+                const sourceBalance = Number(balanceResult.rows[0].balance);
+                if (sourceBalance < quantity) {
+                    throw new Error(
+                        `Insufficient stock at source location. Available: ${sourceBalance}, Requested: ${quantity}`
+                    );
+                }
+
                 await client.query(
                     `
                     INSERT INTO stock_ledger
@@ -181,73 +205,45 @@ async function validateOperation(operationId) {
                 );
             }
 
-            // ADJUSTMENT
-            // ADJUSTMENT → physical count vs recorded stock
-else if (operation.type === "ADJUSTMENT") {
+            // Adjustment lines store the absolute delta. The inventory-loss endpoint
+            // determines whether the adjustment adds to or removes from stock.
+            else if (operation.type === "ADJUSTMENT") {
+                const sourceResult = operation.source_location_id
+                    ? await client.query('SELECT type FROM locations WHERE id = $1', [operation.source_location_id])
+                    : { rows: [] };
+                const destinationResult = operation.dest_location_id
+                    ? await client.query('SELECT type FROM locations WHERE id = $1', [operation.dest_location_id])
+                    : { rows: [] };
+                const sourceIsLoss = sourceResult.rows[0]?.type === 'INVENTORY_LOSS';
+                const destinationIsLoss = destinationResult.rows[0]?.type === 'INVENTORY_LOSS';
+                if (sourceIsLoss === destinationIsLoss) {
+                    throw new Error('Adjustment must move stock between an internal location and inventory loss');
+                }
 
-    const physicalCount = quantity;
-    const recordedStock = Number(product.current_stock);
+                const difference = sourceIsLoss ? quantity : -quantity;
+                const recordedStock = Number(product.current_stock);
+                if (difference < 0 && recordedStock < Math.abs(difference)) {
+                    throw new Error(`Adjustment would make stock negative for product ${product.name}`);
+                }
 
-    const difference = physicalCount - recordedStock;
-
-    if (difference > 0) {
-
-        await client.query(
-            `
-            UPDATE products
-            SET current_stock = current_stock + $1
-            WHERE id = $2;
-            `,
-            [difference, item.product_id]
-        );
-
-    } else if (difference < 0) {
-
-        const decrease = Math.abs(difference);
-
-        if (recordedStock < decrease) {
-            throw new Error(
-                `Adjustment would make stock negative for product ${product.name}`
-            );
-        }
-
-        await client.query(
-            `
-            UPDATE products
-            SET current_stock = current_stock - $1
-            WHERE id = $2;
-            `,
-            [decrease, item.product_id]
-        );
-    }
-
-    // Record the actual adjustment difference in ledger
-    // Record the actual adjustment difference in ledger
-if (difference !== 0) {
-    await client.query(
-        `
-        INSERT INTO stock_ledger
-        (
-            product_id,
-            from_location_id,
-            to_location_id,
-            quantity,
-            reference_doc,
-            created_by
-        )
-        VALUES ($1, $2, $3, $4, $5, $6);
-        `,
-        [
-            item.product_id,
-            difference < 0 ? operation.dest_location_id : null,
-            difference > 0 ? operation.dest_location_id : null,
-            Math.abs(difference),
-            operation.reference_no,
-            1
-        ]
-    );
-}
-}
+                await client.query(
+                    'UPDATE products SET current_stock = current_stock + $1 WHERE id = $2',
+                    [difference, item.product_id]
+                );
+                await client.query(
+                    `INSERT INTO stock_ledger
+                        (product_id, from_location_id, to_location_id, quantity, reference_doc, created_by)
+                     VALUES ($1, $2, $3, $4, $5, $6)`,
+                    [
+                        item.product_id,
+                        operation.source_location_id,
+                        operation.dest_location_id,
+                        quantity,
+                        operation.reference_no,
+                        1,
+                    ]
+                );
+            }
             await client.query(
                 `
                 UPDATE stock_move_lines

@@ -47,9 +47,12 @@ app.get('/health', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/products', authMiddleware, productsRoutes);
-app.use('/api', authMiddleware, warehousesRoutes);
-app.use('/api/operations', operationsRoutes);
-app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/warehouses', authMiddleware);
+app.use('/api/locations', authMiddleware);
+app.use('/api/categories', authMiddleware);
+app.use('/api', warehousesRoutes);
+app.use('/api/operations', authMiddleware, operationsRoutes);
+app.use('/api/dashboard', authMiddleware, dashboardRoutes);
 
 app.use((req, res) => {
   res.status(404).json({

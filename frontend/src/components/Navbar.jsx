@@ -1,10 +1,21 @@
 import { AlertCircle, LoaderCircle, Menu, Search, UserRound } from 'lucide-react'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useWarehouse } from '../context/useWarehouse.js'
 import { useOfflineMode } from '../services/api.js'
 
 function Navbar({ onMenuClick }) {
   const { warehouses, selectedWarehouse, selectWarehouse, loading, unavailable } = useWarehouse()
   const offlineMode = useOfflineMode()
+  const navigate = useNavigate()
+  const [search, setSearch] = useState('')
+
+  function submitSearch(event) {
+    event.preventDefault()
+    const query = search.trim()
+    if (query) navigate(`/products?search=${encodeURIComponent(query)}`)
+    else navigate('/products')
+  }
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b border-border bg-surface px-2.5 sm:gap-3 sm:px-6">
@@ -17,19 +28,23 @@ function Navbar({ onMenuClick }) {
         <Menu aria-hidden="true" size={20} />
       </button>
 
-      <label className="relative min-w-0 max-w-xl flex-1">
-        <span className="sr-only">Search</span>
+      <form onSubmit={submitSearch} className="relative flex min-w-0 max-w-xl flex-1 items-center">
+        <label htmlFor="global-search" className="sr-only">Search products by name or SKU</label>
         <Search
           aria-hidden="true"
           size={18}
           className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-secondary/50"
         />
         <input
+          id="global-search"
           type="search"
-          placeholder="Search"
-          className="h-10 w-full min-w-0 rounded-lg border border-border bg-background pl-9 pr-2 text-sm text-secondary outline-none transition placeholder:text-secondary/45 focus:border-primary focus:ring-2 focus:ring-primary/15 sm:pl-10 sm:pr-3"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search products"
+          className="h-10 w-full min-w-0 rounded-lg border border-border bg-background pl-9 pr-10 text-sm text-secondary outline-none transition placeholder:text-secondary/45 focus:border-primary focus:ring-2 focus:ring-primary/15 sm:pl-10"
         />
-      </label>
+        <button type="submit" aria-label="Search products" title="Search products" className="absolute right-1 flex size-8 items-center justify-center rounded-md text-secondary/60 hover:bg-surface hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><Search aria-hidden="true" size={15} /></button>
+      </form>
 
       {offlineMode && (
         <span

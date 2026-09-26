@@ -60,7 +60,7 @@ function MoveHistory() {
 
   useEffect(() => {
     let active = true
-    api.get('/operations/history')
+    api.get('/operations/ledger')
       .then(({ data }) => { if (active) setMoves(getList(data, ['moves', 'history', 'ledger', 'items'])) })
       .catch((requestError) => { if (active) setError(getErrorMessage(requestError, 'Move history could not be loaded.')) })
       .finally(() => { if (active) setLoading(false) })

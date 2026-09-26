@@ -4,6 +4,24 @@ const { validateOperation } = require("../services/stockEngine");
 
 const router = express.Router();
 
+async function resolveLocation(client, requestedName, locationType) {
+    if (requestedName) {
+        const result = await client.query(
+            `SELECT id, name, type FROM locations WHERE LOWER(name) = LOWER($1) ORDER BY id LIMIT 1`,
+            [requestedName]
+        );
+        if (result.rows.length === 0) throw new Error(`Location not found: ${requestedName}`);
+        return result.rows[0];
+    }
+
+    const result = await client.query(
+        `SELECT id, name, type FROM locations WHERE type = $1 ORDER BY id LIMIT 1`,
+        [locationType]
+    );
+    if (result.rows.length === 0) throw new Error(`No ${locationType.toLowerCase()} location is configured`);
+    return result.rows[0];
+}
+
 router.get("/", async (req, res) => {
     try {
         const { type, status } = req.query;
@@ -16,8 +34,29 @@ router.get("/", async (req, res) => {
                 so.status,
                 so.partner_name,
                 so.created_at,
-                so.validated_at
+                so.validated_at,
+                so.source_location_id,
+                source_location.name AS from_location_name,
+                so.dest_location_id,
+                destination_location.name AS to_location_name,
+                COALESCE(move_lines.items, '[]'::json) AS lines
             FROM stock_operations so
+            LEFT JOIN locations source_location ON source_location.id = so.source_location_id
+            LEFT JOIN locations destination_location ON destination_location.id = so.dest_location_id
+            LEFT JOIN LATERAL (
+                SELECT json_agg(json_build_object(
+                    'id', sml.id,
+                    'product_id', sml.product_id,
+                    'product_name', p.name,
+                    'sku', p.sku,
+                    'quantity', sml.demand_qty,
+                    'demand_qty', sml.demand_qty,
+                    'done_qty', sml.done_qty
+                ) ORDER BY sml.id) AS items
+                FROM stock_move_lines sml
+                JOIN products p ON p.id = sml.product_id
+                WHERE sml.operation_id = so.id
+            ) move_lines ON TRUE
         `;
 
         const conditions = [];
@@ -59,10 +98,20 @@ router.post("/", async (req, res) => {
         const {
             type,
             partner_name,
+            reference_no,
             source_location_id,
             dest_location_id,
-            items
+            source_location_name,
+            destination_location_name,
+            location_name,
+            adjustment_delta
         } = req.body;
+        const items = Array.isArray(req.body.items)
+            ? req.body.items
+            : (Array.isArray(req.body.lines) ? req.body.lines : []).map((line) => ({
+                product_id: line.product_id ?? line.product?.id,
+                demand_qty: line.demand_qty ?? line.quantity,
+            }));
 
         if (!type || !items || items.length === 0) {
             return res.status(400).json({
@@ -80,6 +129,38 @@ router.post("/", async (req, res) => {
 
         await client.query("BEGIN");
 
+        let sourceLocation = null;
+        let destinationLocation = null;
+        if (source_location_id) {
+            const result = await client.query('SELECT id, name, type FROM locations WHERE id = $1', [source_location_id]);
+            sourceLocation = result.rows[0] || null;
+        }
+        if (dest_location_id) {
+            const result = await client.query('SELECT id, name, type FROM locations WHERE id = $1', [dest_location_id]);
+            destinationLocation = result.rows[0] || null;
+        }
+
+        if (type === 'INTERNAL') {
+            sourceLocation ||= await resolveLocation(client, source_location_name, 'INTERNAL');
+            destinationLocation ||= await resolveLocation(client, destination_location_name, 'INTERNAL');
+            if (Number(sourceLocation.id) === Number(destinationLocation.id)) {
+                await client.query("ROLLBACK");
+                return res.status(400).json({ message: 'Source and destination locations must be different.' });
+            }
+        } else if (type === 'RECEIPT') {
+            sourceLocation ||= await resolveLocation(client, source_location_name, 'VENDOR');
+            destinationLocation ||= await resolveLocation(client, destination_location_name || location_name, 'INTERNAL');
+        } else if (type === 'DELIVERY') {
+            sourceLocation ||= await resolveLocation(client, source_location_name || location_name, 'INTERNAL');
+            destinationLocation ||= await resolveLocation(client, destination_location_name, 'CUSTOMER');
+        } else if (type === 'ADJUSTMENT') {
+            const delta = Number(adjustment_delta || 0);
+            const inventoryLoss = await resolveLocation(client, null, 'INVENTORY_LOSS');
+            const countedLocation = await resolveLocation(client, location_name, 'INTERNAL');
+            sourceLocation ||= delta < 0 ? countedLocation : inventoryLoss;
+            destinationLocation ||= delta < 0 ? inventoryLoss : countedLocation;
+        }
+
         const prefix = {
             RECEIPT: "REC",
             DELIVERY: "DEL",
@@ -87,7 +168,8 @@ router.post("/", async (req, res) => {
             ADJUSTMENT: "ADJ"
         }[type];
 
-        const referenceNo = `${prefix}-${Date.now()}`;
+        const requestedReference = typeof reference_no === 'string' ? reference_no.trim() : '';
+        const referenceNo = requestedReference || `${prefix}-${Date.now()}`;
 
         const operationResult = await client.query(
             `
@@ -106,8 +188,8 @@ router.post("/", async (req, res) => {
             [
                 referenceNo,
                 type,
-                source_location_id || null,
-                dest_location_id || null,
+                sourceLocation?.id || null,
+                destinationLocation?.id || null,
                 partner_name || null
             ]
         );
@@ -115,7 +197,8 @@ router.post("/", async (req, res) => {
         const operation = operationResult.rows[0];
 
         for (const item of items) {
-            if (!item.product_id || !item.demand_qty || item.demand_qty <= 0) {
+            const demandQuantity = Number(item.demand_qty);
+            if (!item.product_id || !Number.isInteger(demandQuantity) || demandQuantity <= 0) {
                 throw new Error("Invalid product or quantity");
             }
 
@@ -133,18 +216,42 @@ router.post("/", async (req, res) => {
                 [
                     operation.id,
                     item.product_id,
-                    item.demand_qty
+                    demandQuantity
                 ]
             );
         }
 
+        const lineResult = await client.query(
+            `SELECT sml.id, sml.product_id, p.name AS product_name, p.sku,
+                    sml.demand_qty AS quantity, sml.demand_qty, sml.done_qty
+             FROM stock_move_lines sml JOIN products p ON p.id = sml.product_id
+             WHERE sml.operation_id = $1 ORDER BY sml.id`,
+            [operation.id]
+        );
+
         await client.query("COMMIT");
 
         res.status(201).json({
+            success: true,
             message: "Operation created successfully",
+            operation: {
+                ...operation,
+                from_location_name: sourceLocation?.name || null,
+                to_location_name: destinationLocation?.name || null,
+                lines: lineResult.rows,
+            },
             operation_id: operation.id,
             reference_no: operation.reference_no,
-            status: operation.status
+            type: operation.type,
+            status: operation.status,
+            partner_name: operation.partner_name,
+            source_location_id: operation.source_location_id,
+            dest_location_id: operation.dest_location_id,
+            lines: items.map((item) => ({
+                product_id: Number(item.product_id),
+                quantity: Number(item.demand_qty),
+                demand_qty: Number(item.demand_qty),
+            })),
         });
 
     } catch (error) {
@@ -160,15 +267,34 @@ router.post("/", async (req, res) => {
     }
 });
 
-router.put("/:id/validate", async (req, res) => {
+const validateOperationHandler = async (req, res) => {
     try {
         const operationId = req.params.id;
 
         const result = await validateOperation(operationId);
 
+        const operationResult = await pool.query(
+            `SELECT so.id, so.reference_no, so.type, so.status, so.partner_name,
+                    so.created_at, so.validated_at, fl.name AS from_location_name,
+                    tl.name AS to_location_name
+             FROM stock_operations so
+             LEFT JOIN locations fl ON fl.id = so.source_location_id
+             LEFT JOIN locations tl ON tl.id = so.dest_location_id
+             WHERE so.id = $1`,
+            [operationId]
+        );
+        const linesResult = await pool.query(
+            `SELECT sml.id, sml.product_id, p.name AS product_name, p.sku,
+                    sml.demand_qty AS quantity, sml.demand_qty, sml.done_qty
+             FROM stock_move_lines sml JOIN products p ON p.id = sml.product_id
+             WHERE sml.operation_id = $1 ORDER BY sml.id`,
+            [operationId]
+        );
         res.json({
+            success: true,
             message: "Operation validated successfully",
-            operation_id: result.operationId
+            operation_id: result.operationId,
+            operation: { ...operationResult.rows[0], lines: linesResult.rows },
         });
 
     } catch (error) {
@@ -192,6 +318,7 @@ router.put("/:id/validate", async (req, res) => {
 
         if (
             error.message.startsWith("Insufficient stock") ||
+            error.message.startsWith("Validation Halted: Insufficient stock") ||
             error.message.startsWith("Adjustment would make stock negative")
         ) {
             return res.status(400).json({
@@ -204,9 +331,12 @@ router.put("/:id/validate", async (req, res) => {
             error: error.message
         });
     }
-});
+};
 
-router.get("/ledger", async (req, res) => {
+router.put("/:id/validate", validateOperationHandler);
+router.post("/:id/validate", validateOperationHandler);
+
+router.get(["/ledger", "/history"], async (req, res) => {
     try {
         const {
             date_from,
