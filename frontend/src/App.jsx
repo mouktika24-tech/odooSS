@@ -1,5 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import AppLayout from './components/AppLayout.jsx'
+import Login from './pages/Login.jsx'
+import Register from './pages/Register.jsx'
 
 function PlaceholderPage({ title }) {
   return (
@@ -15,6 +17,8 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
         <Route element={<AppLayout />}>
           <Route path="/" element={<PlaceholderPage title="Dashboard" />} />
           <Route path="/dashboard" element={<PlaceholderPage title="Dashboard" />} />
