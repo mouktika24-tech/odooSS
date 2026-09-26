@@ -6,12 +6,12 @@ import { offlineLocations } from '../services/offlineData.js'
 const statusFilters = ['ALL', 'DRAFT', 'WAITING', 'READY', 'DONE', 'CANCELED']
 
 const statusStyles = {
-  DRAFT: 'bg-slate-100 text-slate-600 ring-slate-200',
-  WAITING: 'bg-sky-50 text-sky-700 ring-sky-200',
-  READY: 'bg-amber-50 text-amber-800 ring-amber-200',
-  DONE: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  CANCELED: 'bg-red-50 text-red-700 ring-red-200',
-  CANCELLED: 'bg-red-50 text-red-700 ring-red-200',
+  DRAFT: 'border-slate-200 bg-slate-50 text-slate-700',
+  WAITING: 'border-sky-200 bg-sky-50 text-sky-800',
+  READY: 'border-amber-200 bg-amber-50 text-amber-800',
+  DONE: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  CANCELED: 'border-red-200 bg-red-50 text-red-800',
+  CANCELLED: 'border-red-200 bg-red-50 text-red-800',
 }
 
 function getDate(move) {
@@ -153,7 +153,7 @@ function MoveHistory() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <label className="relative min-w-0 flex-1">
               <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search product, SKU, or reference" aria-label="Search product, SKU, or reference" className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15" />
+              <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search SKU, product, or reference number" aria-label="Search SKU, product, or reference number" className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15" />
             </label>
             <label className="flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-500">Location<select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)} aria-label="Filter ledger by location" className="max-w-52 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-odoo-purple focus:ring-2 focus:ring-[#714B67]/15"><option value="ALL">All locations</option>{locationOptions.map((location) => <option key={location} value={location}>{location}</option>)}</select></label>
             <div className="flex flex-wrap items-center gap-2">
@@ -181,7 +181,7 @@ function MoveHistory() {
                 const reference = getReference(move)
                 const from = getLocation(move, 'from')
                 const to = getLocation(move, 'to')
-                return <tr key={key} className="hover:bg-slate-50/80"><td className="whitespace-nowrap px-5 py-4 text-slate-600">{getDate(move)}</td><td className="whitespace-nowrap px-5 py-4 font-semibold text-odoo-dark">{reference}</td><td className="whitespace-nowrap px-5 py-4 text-slate-700">{product}</td><td className="whitespace-nowrap px-5 py-4 text-slate-600">{from}</td><td className="whitespace-nowrap px-5 py-4 text-slate-600">{to}</td><td className={`whitespace-nowrap px-5 py-4 text-right font-semibold tabular-nums ${quantity.positive === null ? 'text-slate-700' : quantity.positive ? 'text-emerald-700' : 'text-red-700'}`}>{quantity.text}</td><td className="px-5 py-4"><span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${statusStyles[status] || 'bg-slate-100 text-slate-600 ring-slate-200'}`}>{status.charAt(0) + status.slice(1).toLowerCase()}</span></td></tr>
+                return <tr key={key} className="hover:bg-slate-50/80"><td className="whitespace-nowrap px-5 py-4 text-slate-600">{getDate(move)}</td><td className="whitespace-nowrap px-5 py-4 font-semibold text-odoo-dark">{reference}</td><td className="whitespace-nowrap px-5 py-4 text-slate-700">{product}</td><td className="whitespace-nowrap px-5 py-4 text-slate-600">{from}</td><td className="whitespace-nowrap px-5 py-4 text-slate-600">{to}</td><td className={`whitespace-nowrap px-5 py-4 text-right font-semibold tabular-nums ${quantity.positive === null ? 'text-slate-700' : quantity.positive ? 'text-emerald-700' : 'text-red-700'}`}>{quantity.text}</td><td className="px-5 py-4"><span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${statusStyles[status] || statusStyles.DRAFT}`}>{status.charAt(0) + status.slice(1).toLowerCase()}</span></td></tr>
               })}
               {!loading && visibleMoves.length === 0 && <tr><td colSpan="7" className="px-5 py-14 text-center"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-lg bg-slate-100 text-slate-500"><ArrowLeftRight size={20} /></span><p className="mt-3 text-sm font-semibold text-slate-700">{moves.length ? 'No matching movements' : 'No stock movements yet'}</p><p className="mt-1 text-xs text-slate-500">{moves.length ? 'Adjust the search or filters.' : 'Completed operations will be recorded in this audit trail.'}</p></td></tr>}
               {loading && <tr><td colSpan="7" className="px-5 py-14 text-center text-sm text-slate-500">Loading move history...</td></tr>}
