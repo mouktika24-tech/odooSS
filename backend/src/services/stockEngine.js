@@ -181,65 +181,72 @@ async function validateOperation(operationId) {
             }
 
             // ADJUSTMENT
-            else if (operation.type === "ADJUSTMENT") {
+            // ADJUSTMENT → physical count vs recorded stock
+else if (operation.type === "ADJUSTMENT") {
 
-                const difference = quantity;
+    const physicalCount = quantity;
+    const recordedStock = Number(product.current_stock);
 
-                if (difference > 0) {
+    const difference = physicalCount - recordedStock;
 
-                    await client.query(
-                        `
-                        UPDATE products
-                        SET current_stock = current_stock + $1
-                        WHERE id = $2;
-                        `,
-                        [difference, item.product_id]
-                    );
+    if (difference > 0) {
 
-                } else if (difference < 0) {
+        await client.query(
+            `
+            UPDATE products
+            SET current_stock = current_stock + $1
+            WHERE id = $2;
+            `,
+            [difference, item.product_id]
+        );
 
-                    const decrease = Math.abs(difference);
+    } else if (difference < 0) {
 
-                    if (Number(product.current_stock) < decrease) {
-                        throw new Error(
-                            `Adjustment would make stock negative for product ${product.name}`
-                        );
-                    }
+        const decrease = Math.abs(difference);
 
-                    await client.query(
-                        `
-                        UPDATE products
-                        SET current_stock = current_stock - $1
-                        WHERE id = $2;
-                        `,
-                        [decrease, item.product_id]
-                    );
-                }
+        if (recordedStock < decrease) {
+            throw new Error(
+                `Adjustment would make stock negative for product ${product.name}`
+            );
+        }
 
-                await client.query(
-                    `
-                    INSERT INTO stock_ledger
-                    (
-                        product_id,
-                        from_location_id,
-                        to_location_id,
-                        quantity,
-                        reference_doc,
-                        created_by
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6);
-                    `,
-                    [
-                        item.product_id,
-                        difference < 0 ? operation.dest_location_id : null,
-                        difference > 0 ? operation.dest_location_id : null,
-                        Math.abs(difference),
-                        operation.reference_no,
-                        1
-                    ]
-                );
-            }
+        await client.query(
+            `
+            UPDATE products
+            SET current_stock = current_stock - $1
+            WHERE id = $2;
+            `,
+            [decrease, item.product_id]
+        );
+    }
 
+    // Record the actual adjustment difference in ledger
+    // Record the actual adjustment difference in ledger
+if (difference !== 0) {
+    await client.query(
+        `
+        INSERT INTO stock_ledger
+        (
+            product_id,
+            from_location_id,
+            to_location_id,
+            quantity,
+            reference_doc,
+            created_by
+        )
+        VALUES ($1, $2, $3, $4, $5, $6);
+        `,
+        [
+            item.product_id,
+            difference < 0 ? operation.dest_location_id : null,
+            difference > 0 ? operation.dest_location_id : null,
+            Math.abs(difference),
+            operation.reference_no,
+            1
+        ]
+    );
+}
+}
             await client.query(
                 `
                 UPDATE stock_move_lines
