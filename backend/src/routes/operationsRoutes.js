@@ -223,13 +223,14 @@ router.put("/:id/validate", async (req, res) => {
                 await client.query(
                     `
                     INSERT INTO stock_ledger
-                    (
-                        product_id,
-                        from_location_id,
-                        to_location_id,
-                        quantity,
-                        reference_doc
-                    )
+(
+    product_id,
+    from_location_id,
+    to_location_id,
+    quantity,
+    reference_doc,
+    created_by
+)
                     VALUES ($1, $2, $3, $4, $5);
                     `,
                     [
@@ -237,7 +238,8 @@ router.put("/:id/validate", async (req, res) => {
                         operation.source_location_id,
                         operation.dest_location_id,
                         quantity,
-                        operation.reference_no
+                        operation.reference_no,
+                        1
                     ]
                 );
             }
